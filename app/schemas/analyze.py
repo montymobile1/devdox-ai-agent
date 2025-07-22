@@ -18,13 +18,6 @@ class AnalyseBase(BaseModel):
     )
 
 
-# class AnalyseRequest:
-#     def __init__(
-#             self,
-#             payload: AnalyseBase = Body(...),
-#     ):
-#         self.payload = payload
-
 class AnalyseRequest(BaseModel):
     """Request wrapper for analysis"""
 

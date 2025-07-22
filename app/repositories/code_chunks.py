@@ -2,20 +2,20 @@ import logging
 from uuid import UUID
 from abc import abstractmethod
 from tortoise.connection import connections
-from typing import Dict, List, Protocol, Union
+from typing import Dict, List, Protocol
 from models.code_chunks import CodeChunks
 
 class ICodeChunksStore(Protocol):
     @abstractmethod
     async def get_user_repo_chunks(
-        self, user_id: Union[str, UUID] , repo_id: Union[str, UUID],question:str, limit: int = None
+        self, user_id: str | UUID, repo_id: str | UUID, question: str, limit: int = None
     ) -> List[Dict]: ...
 
     @abstractmethod
-    async def similarity_search(self, embedding:str, user_id : Union[str, UUID] , repo_id: Union[str, UUID],  limit: int = None,  threshold: float = 0.8,): ...
+    async def similarity_search(self, embedding:str, user_id : str | UUID , repo_id:  str | UUID,  limit: int = None,  threshold: float = 0.8,): ...
 
     @abstractmethod
-    async def get_repo_file_chunks(self, user_id : Union[str, UUID] , repo_id: Union[str, UUID],  file_name:str): ...
+    async def get_repo_file_chunks(self, user_id :  str | UUID , repo_id:  str | UUID,  file_name:str): ...
 
 class TortoiseCodeChunksStore(ICodeChunksStore):
 
@@ -33,7 +33,7 @@ class TortoiseCodeChunksStore(ICodeChunksStore):
 
 
     async def get_user_repo_chunks(
-            self,user_id: Union[str, UUID] , repo_id: Union[str, UUID], query_embedding: List[float], limit: int = None
+            self,user_id: str | UUID , repo_id: str | UUID, query_embedding: List[float], limit: int = None
     ) -> List[Dict]:
         if not repo_id:
             return []
@@ -43,7 +43,7 @@ class TortoiseCodeChunksStore(ICodeChunksStore):
         return await  self.similarity_search(embedding_str, user_id, repo_id,user_id, limit)
 
 
-    async def similarity_search(self, embedding:str, user_id : Union[str, UUID] , repo_id: Union[str, UUID],  limit: int = None,  threshold: float = 0.8,):
+    async def similarity_search(self, embedding:str, user_id : str | UUID , repo_id: str | UUID,  limit: int = None,  threshold: float = 0.8,):
         """Perform semantic similarity search"""
         try:
             query = """
@@ -62,7 +62,7 @@ class TortoiseCodeChunksStore(ICodeChunksStore):
             return []  # Return empty list on error
 
 
-    async def get_repo_file_chunks(self,  user_id : Union[str, UUID] , repo_id: Union[str, UUID],  file_name:str="readme"):
+    async def get_repo_file_chunks(self,  user_id : str | UUID , repo_id: str | UUID,  file_name:str="readme"):
         """Return chunks of a specific file"""
         try:
             result = await CodeChunks.filter( file_name__icontains=file_name,  user_id=user_id, repo_id=repo_id).order_by("-created_at").values("content")

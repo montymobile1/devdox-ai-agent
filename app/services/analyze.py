@@ -47,7 +47,7 @@ class AnalyseService:
         query_embedding = await self.generate_embedding(question)
         results = await self.code_chunks_store.get_user_repo_chunks(user_claims.sub, repo_info.id, query_embedding, limit=5)
         if not results:
-            yield "No code chuncks found."
+            yield "No code chunks found."
             return
 
         read_me_results = await self.code_chunks_store.get_repo_file_chunks(user_claims.sub, repo_info.id, file_name="setup")
@@ -63,7 +63,7 @@ class AnalyseService:
 
 
         # Step 1: Rerank Results
-        reranked_results = await self.rerank_results(together_client,results, question, top_k=10)
+        reranked_results = self.rerank_results(results, question, top_k=10)
         # Step 2: Stream from LLM
         if reranked_results:
                 combined_text = ""
@@ -78,42 +78,76 @@ class AnalyseService:
                 context_prompt = f" Create a single comprehensive documentation that covers all functionality across these files: {', '.join(file_list)}. \n{combined_text}"
 
 
-                instructions_context = None
+                instructions_context = ""
                 async for chunk in self._generate_documentation(client=together_client, context= context_prompt,question= question, previous_messages= [],
                                                                instructions=instructions_context, repo_info=repo_info):
                     yield chunk
         else:
                 yield json.dumps({"data": "No relevant reranked results found."})
 
-    async  def rerank_results(self,client, results:list, last_message_content:str, top_k:int=10):
+    def rerank_results(self, results: list, last_message_content: str, top_k: int = 10):
         """Rerank results based on multiple factors"""
-        try:
 
+        # Return early if no results to rerank
+        if not results:
+            return []
+
+        # Return early if query is empty
+        if not last_message_content or not last_message_content.strip():
+            logging.warning("Empty query provided for reranking, returning original results")
+            return results
+
+        try:
             co_cohere = cohere.ClientV2(api_key=settings.COHERE_API_KEY)
             documents = []
+
             for doc in results:
+                content = doc.get("content", "")
+                if not content.strip():  # Skip empty documents
+                    continue
+                documents.append(content)
 
-                documents.append(doc.get("content", ""))
+            # If no valid documents found, return original results
+            if not documents:
+                logging.warning("No valid documents found for reranking")
+                return results
 
-            response = co_cohere.rerank(query=last_message_content,
-                                        documents= documents, top_n=len(results),
-                                        model="rerank-v3.5")
+            response = co_cohere.rerank(
+                query=last_message_content,
+                documents=documents,
+                top_n=min(len(documents), top_k),
+                model="rerank-v3.5"
+            )
 
+            # Check if reranking response is valid
+            if not response or not hasattr(response, 'results') or not response.results:
+                logging.warning("Invalid reranking response received")
+                return results
 
+            # Create a copy of results to avoid mutating the original
+            reranked_results = results.copy()
 
             # Update documents with rerank scores
-            for i, result in enumerate(response.results):
-                if i < len(results):
-                    results[result.index]['rerank_score'] = result.relevance_score
+            for result in response.results:
+                if result.index < len(reranked_results):
+                    reranked_results[result.index]['rerank_score'] = result.relevance_score
 
-            # Sort by rerank score
-            results.sort(key=lambda x: x.get('rerank_score', 0), reverse=True)
-            return results
+            # Filter out results without rerank scores (in case some failed)
+            valid_results = [r for r in reranked_results if 'rerank_score' in r]
+
+            if not valid_results:
+                logging.warning("No results received rerank scores")
+                return results
+
+            # Sort by rerank score and limit to top_k
+            valid_results.sort(key=lambda x: x.get('rerank_score', 0), reverse=True)
+
+            return valid_results[:top_k]
 
         except Exception as e:
             logging.error(f"Cross-encoder reranking failed: {e}")
+            # Return original results in case of failure
             return results
-
 
 
     async def generate_embedding(self, question:str, model_api_string="togethercomputer/m2-bert-80M-32k-retrieval"):
