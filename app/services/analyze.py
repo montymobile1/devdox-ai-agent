@@ -1,8 +1,8 @@
 import logging
 from typing import Annotated, AsyncGenerator, List
 from fastapi import Depends
-import together
 from together import Together
+import cohere
 import asyncio
 import json
 from app.repositories.code_chunks import TortoiseCodeChunksStore as CodeChunksStore
@@ -34,8 +34,8 @@ class AnalyseService:
         relative_path:str
     )-> AsyncGenerator[str, None]:
         together_client = Together(api_key=settings.TOGETHER_API_KEY)
-        # Get Repo
 
+        # Get Repo
         repo_info = await self.repo_store.find_repo_by_user_relative_path(
             user_id=user_claims.sub, relative_path=relative_path
         )
@@ -45,7 +45,6 @@ class AnalyseService:
             return
 
         query_embedding = await self.generate_embedding(question)
-
         results = await self.code_chunks_store.get_user_repo_chunks(user_claims.sub, repo_info.id, query_embedding, limit=5)
         if not results:
             yield "No code chuncks found."
@@ -64,8 +63,7 @@ class AnalyseService:
 
 
         # Step 1: Rerank Results
-        reranked_results = await self.rerank_results(results, question, top_k=10)
-
+        reranked_results = await self.rerank_results(together_client,results, question, top_k=10)
         # Step 2: Stream from LLM
         if reranked_results:
                 combined_text = ""
@@ -81,38 +79,35 @@ class AnalyseService:
 
 
                 instructions_context = None
-
                 async for chunk in self._generate_documentation(client=together_client, context= context_prompt,question= question, previous_messages= [],
                                                                instructions=instructions_context, repo_info=repo_info):
                     yield chunk
         else:
                 yield json.dumps({"data": "No relevant reranked results found."})
 
-    async  def rerank_results(self, results:list, last_message_content:str, top_k:int=10):
+    async  def rerank_results(self,client, results:list, last_message_content:str, top_k:int=10):
         """Rerank results based on multiple factors"""
         try:
-            pairs = []
+
+            co_cohere = cohere.ClientV2(api_key=settings.COHERE_API_KEY)
+            documents = []
             for doc in results:
 
-                pairs.append({
-                    "query": last_message_content,
-                    "document": doc.embedding  # Truncate for model limits
-                })
+                documents.append(doc.get("content", ""))
 
-            response = together.Rerank.create(
-                model="mixedbread-ai/mxbai-rerank-large-v1",
-                query=last_message_content,
-                documents=[doc.get("embedding")[:512] for doc in results],
-                top_k=len(results)
-            )
+            response = co_cohere.rerank(query=last_message_content,
+                                        documents= documents, top_n=len(results),
+                                        model="rerank-v3.5")
+
+
 
             # Update documents with rerank scores
             for i, result in enumerate(response.results):
                 if i < len(results):
-                    results[result.index].rerank_score = result.relevance_score
+                    results[result.index]['rerank_score'] = result.relevance_score
 
             # Sort by rerank score
-            results.sort(key=lambda x: x.rerank_score or 0, reverse=True)
+            results.sort(key=lambda x: x.get('rerank_score', 0), reverse=True)
             return results
 
         except Exception as e:

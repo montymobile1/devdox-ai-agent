@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     )
     API_DEBUG: bool = True
     SECRET_KEY: str = "testtesttesttesttesttesttesttest"  # Only for local/testing
+    LOG_LEVEL:str = "INFO"
     # SUPABASE VAULT
     SUPABASE_VAULT_ENABLED: bool = True
     # SUPABASE settings
@@ -31,7 +32,7 @@ class Settings(BaseSettings):
     SUPABASE_REST_API: bool = True
     VAULT_KEYS: str = ""
 
-    SUPABASE_HOST: str = "https://locahost"
+    SUPABASE_HOST: str = "https://localhost"
     SUPABASE_USER: str = "postgres"
     SUPABASE_PASSWORD: str = "test"
     SUPABASE_PORT: int = 5432
@@ -41,6 +42,8 @@ class Settings(BaseSettings):
     DB_MAX_CONNECTIONS: int = 10
 
     TOGETHER_API_KEY: str = "test-clerk-key"
+
+    COHERE_API_KEY:str = "test-cohere-key"
 
 
     # CORS settings

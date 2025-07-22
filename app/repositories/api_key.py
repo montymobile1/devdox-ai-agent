@@ -49,7 +49,7 @@ class TortoiseApiKeyStore(IApiKeyStore):
             await APIKEY.filter(api_key=hashed_key ,is_active=True)
             .first()
         )
-        pass
+
 
     async def query_for_existing_hashes(self, hash_key: str) -> bool:
 

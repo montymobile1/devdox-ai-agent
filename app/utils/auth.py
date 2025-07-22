@@ -263,7 +263,7 @@ async def mcp_auth_interceptor(
 async def get_mcp_aware_user_context(request: Request) -> UserClaims:
     """Get user context for both MCP and regular requests"""
     host = request.headers.get("host", "")
-
+    api_key_header = request.headers.get("api-key") or request.headers.get("API-KEY")
     if "apiserver" in host:
         # MCP internal request - get stored user context
         user = mcp_context.get_most_recent_user()
@@ -274,4 +274,4 @@ async def get_mcp_aware_user_context(request: Request) -> UserClaims:
             raise HTTPException(status_code=500, detail="No user context found")
     else:
         # Regular API request
-        return await get_authenticated_user(request)
+        return await get_authenticated_user(request, api_key_header)

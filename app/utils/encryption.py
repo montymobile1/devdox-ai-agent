@@ -20,6 +20,11 @@ class FernetEncryptionHelper(IEncryptionHelper):
     def __init__(self, secret_key: str = settings.SECRET_KEY):
         if not secret_key:
             raise ValueError(constants.ENCRYPTION_KEY_NOT_FOUND)
+        
+        try:
+            Fernet(secret_key)
+        except Exception as e:
+            raise ValueError(f"Invalid encryption key format: {e}")
 
         self.secret_key = secret_key
 
@@ -27,17 +32,30 @@ class FernetEncryptionHelper(IEncryptionHelper):
         return Fernet(self.secret_key).encrypt(plaintext.encode()).decode()
 
     def decrypt(self, encrypted_text: str) -> str:
-        return Fernet(self.secret_key).decrypt(encrypted_text.encode()).decode()
+        try:
+            
+            return Fernet(self.secret_key).decrypt(encrypted_text.encode()).decode()
+        except Exception as e:
+            raise ValueError(f"Decryption failed: {e}")
+
 
     def encrypt_for_user(self, plaintext: str, salt_b64: str) -> str:
-        salt_bytes = base64.urlsafe_b64decode(salt_b64.encode())
+        try:
+            salt_bytes = base64.urlsafe_b64decode(salt_b64.encode())
+        except Exception as e:
+        
+            raise ValueError(f"Invalid base64 salt: {e}")
         cipher = Fernet(self._derive_key(salt_bytes))
         return cipher.encrypt(plaintext.encode()).decode()
 
     def decrypt_for_user(self, encrypted_text: str, salt_b64: str) -> str:
-        salt_bytes = base64.urlsafe_b64decode(salt_b64.encode())
-        cipher = Fernet(self._derive_key(salt_bytes))
-        return cipher.decrypt(encrypted_text.encode()).decode()
+        try:
+            salt_bytes = base64.urlsafe_b64decode(salt_b64.encode())
+
+            cipher = Fernet(self._derive_key(salt_bytes))
+            return cipher.decrypt(encrypted_text.encode()).decode()
+        except Exception as e:
+            raise ValueError(f"Decryption failed: {e}")
 
     def _derive_key(self, salt: bytes) -> bytes:
         kdf = PBKDF2HMAC(

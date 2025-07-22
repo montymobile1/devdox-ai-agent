@@ -1,6 +1,7 @@
+import os
 import logging
 from logging.handlers import RotatingFileHandler
-
+from app.config import settings
 
 def setup_logging():
     """
@@ -9,7 +10,8 @@ def setup_logging():
     """
     # Create a custom logger
     logger = logging.getLogger()
-    logger.setLevel(logging.DEBUG)
+    log_level = getattr(logging, settings.LOG_LEVEL.upper())
+    logger.setLevel(log_level)
 
     # Prevent duplicate logs during development when using `uvicorn --reload`.
     # Each reload reinitializes the logger and adds new handlers unless cleared first.
