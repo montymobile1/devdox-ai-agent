@@ -34,6 +34,7 @@ class AnalyseService:
         relative_path:str
     )-> AsyncGenerator[str, None]:
         together_client = Together(api_key=settings.TOGETHER_API_KEY)
+        readme_content = ""
 
         # Get Repo
         repo_info = await self.repo_store.find_repo_by_user_relative_path(
@@ -44,14 +45,13 @@ class AnalyseService:
             yield "No relevant repo found."
             return
 
-        query_embedding = await self.generate_embedding(question)
+        query_embedding = self.generate_embedding(question)
         results = await self.code_chunks_store.get_user_repo_chunks(user_claims.sub, repo_info.id, query_embedding, limit=5)
         if not results:
             yield "No code chunks found."
             return
 
-        read_me_results = await self.code_chunks_store.get_repo_file_chunks(user_claims.sub, repo_info.id, file_name="setup")
-        readme_content = ""
+        read_me_results = await self.code_chunks_store.get_repo_file_chunks(user_claims.sub, repo_info.id, file_name="readme")
 
 
         if read_me_results:
@@ -61,7 +61,8 @@ class AnalyseService:
                     if content:
                         readme_content += content + "\n"
 
-
+                if readme_content.strip():  # Check if we have actual content
+                        yield f"README/Setup information:\n{readme_content}"
         # Step 1: Rerank Results
         reranked_results = self.rerank_results(results, question, top_k=10)
         # Step 2: Stream from LLM
@@ -150,7 +151,7 @@ class AnalyseService:
             return results
 
 
-    async def generate_embedding(self, question:str, model_api_string="togethercomputer/m2-bert-80M-32k-retrieval"):
+    def generate_embedding(self, question:str, model_api_string="togethercomputer/m2-bert-80M-32k-retrieval"):
         together_client = Together(api_key=settings.TOGETHER_API_KEY)
         outputs = together_client.embeddings.create(
             input=question,
@@ -289,13 +290,10 @@ class AnalyseService:
                 repetition_penalty=1,
                 stream=True,
             )
-
-            buffer = ""
             for chunk in response:
                 if chunk.choices[0].delta.content:
 
                     chunk_text = chunk.choices[0].delta.content
-                    buffer += chunk_text
                     if chunk_text in ["json", "```"]:
                         chunk_text = ""
 

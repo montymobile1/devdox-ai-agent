@@ -100,7 +100,7 @@ class APIKeyAuthenticator(IUserAuthenticator):
             user_record = await self.user_store.get_by_user_id(api_key_record.user_id)
             if not user_record:
                 raise UnauthorizedAccess(
-                    log_message=f"User not found"
+                    log_message="User not found"
                 )
             # Get user information from the API key record
             # You might need to join with user table or have user info in the API key record
@@ -247,7 +247,7 @@ class MCPUserContextManager:
 mcp_context = MCPUserContextManager()
 
 
-async def mcp_auth_interceptor(
+def mcp_auth_interceptor(
         request: Request,
         user_claims: UserClaims = Depends(get_authenticated_user)
 ) -> UserClaims:

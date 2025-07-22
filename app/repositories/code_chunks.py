@@ -66,11 +66,9 @@ class TortoiseCodeChunksStore(ICodeChunksStore):
         """Return chunks of a specific file"""
         try:
             result = await CodeChunks.filter( file_name__icontains=file_name,  user_id=user_id, repo_id=repo_id).order_by("-created_at").values("content")
-
-
             return result
         except Exception as e:
-
+            logging.error(f"get_repo_file_chunks failed: {e}")
             return []  # Return empty list on error
 
 
