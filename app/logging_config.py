@@ -27,7 +27,7 @@ def setup_logging():
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
-    log_dir = "/app/logs"
+    log_dir = settings.LOG_DIR
     os.makedirs(log_dir, exist_ok=True)
     # File handler with rotating log (max 5MB per file, keeping 3 backup files)
     file_handler = RotatingFileHandler(
