@@ -46,45 +46,55 @@ class AnalyseService:
             return
 
         query_embedding = self.generate_embedding(question)
+
         results = await self.code_chunks_store.get_user_repo_chunks(user_claims.sub, repo_info.id, query_embedding, limit=5)
         if not results:
             yield "No code chunks found."
             return
 
-        read_me_results = await self.code_chunks_store.get_repo_file_chunks(user_claims.sub, repo_info.id, file_name="readme")
+        readme_content = await self._get_readme_content(user_claims.sub, repo_info.id)
+        if readme_content:
+            yield f"README/Setup information:\n{readme_content}"
 
 
-        if read_me_results:
-                # Loop through each chunk and collect the content
-                for chunk in read_me_results:
-                    content = chunk.get("content")
-                    if content:
-                        readme_content += content + "\n"
-
-                if readme_content.strip():  # Check if we have actual content
-                        yield f"README/Setup information:\n{readme_content}"
         # Step 1: Rerank Results
         reranked_results = self.rerank_results(results, question, top_k=10)
+
         # Step 2: Stream from LLM
         if reranked_results:
-                combined_text = ""
-                file_list = []
 
-                for result in reranked_results:
-                    file_name = result.get('file_name', '')
-                    text = result.get('content', '')
-                    combined_text += f"\n### FILE: {file_name} ###\n{text}\n"
-                    file_list.append(file_name)
-
-                context_prompt = f" Create a single comprehensive documentation that covers all functionality across these files: {', '.join(file_list)}. \n{combined_text}"
-
-
-                instructions_context = ""
-                async for chunk in self._generate_documentation(client=together_client, context= context_prompt,question= question, previous_messages= [],
-                                                               instructions=instructions_context, repo_info=repo_info):
+                async for chunk in self._process_reranked_results(
+                            together_client, reranked_results, question, repo_info
+                ):
                     yield chunk
+
         else:
                 yield json.dumps({"data": "No relevant reranked results found."})
+
+    async def _process_reranked_results(self, together_client, reranked_results, question, repo_info):
+        """Extract reranked results processing into separate method"""
+        combined_text = ""
+        file_list = []
+
+        for result in reranked_results:
+            file_name = result.get('file_name', '')
+            text = result.get('content', '')
+            combined_text += f"\n### FILE: {file_name} ###\n{text}\n"
+            file_list.append(file_name)
+
+        context_prompt = f" Create a single comprehensive documentation that covers all functionality across these files: {', '.join(file_list)}. \n{combined_text}"
+        instructions_context = ""
+        async for chunk in self._generate_documentation(
+                client=together_client,
+                context=context_prompt,
+                question=question,
+                previous_messages=[],
+                instructions=instructions_context,
+                repo_info=repo_info
+        ):
+
+            yield chunk
+
 
     def rerank_results(self, results: list, last_message_content: str, top_k: int = 10):
         """Rerank results based on multiple factors"""
@@ -158,6 +168,25 @@ class AnalyseService:
             model=model_api_string,
         )
         return [x.embedding for x in outputs.data]
+
+
+
+    async def _get_readme_content(self, user_id: str, repo_id: str) -> str:
+        """Extract README content collection into separate method"""
+        read_me_results = await self.code_chunks_store.get_repo_file_chunks(
+            user_id, repo_id, file_name="readme"
+        )
+
+        if not read_me_results:
+            return ""
+
+        readme_content = ""
+        for chunk in read_me_results:
+            content = chunk.get("content")
+            if content:
+                readme_content += content + "\n"
+
+        return readme_content.strip()
 
     async def _generate_documentation(self,
             client,
