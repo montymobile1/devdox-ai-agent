@@ -52,7 +52,7 @@ class Settings(BaseSettings):
 
     # Server settings
     HOST: str = "0.0.0.0"
-    PORT: int = 8000
+    PORT: int = 9002
 
     # Version
     VERSION: str = "0.1.1"
