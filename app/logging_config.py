@@ -27,16 +27,17 @@ def setup_logging():
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
-
+    log_dir = "/app/logs"
+    os.makedirs(log_dir, exist_ok=True)
     # File handler with rotating log (max 5MB per file, keeping 3 backup files)
     file_handler = RotatingFileHandler(
-        "app.log", maxBytes=5 * 1024 * 1024, backupCount=3
+         os.path.join(log_dir, "app.log"), maxBytes=5 * 1024 * 1024, backupCount=3
     )
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 
     # Optionally, create more handlers (e.g., for error logs, different log levels, etc.)
-    error_handler = logging.FileHandler("error.log")
+    error_handler = logging.FileHandler(  os.path.join(log_dir, "error.log"))
     error_handler.setLevel(logging.ERROR)
     error_handler.setFormatter(formatter)
     logger.addHandler(error_handler)
