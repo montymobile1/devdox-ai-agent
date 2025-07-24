@@ -45,13 +45,14 @@ class Settings(BaseSettings):
 
     COHERE_API_KEY:str = "test-cohere-key"
 
+    LOG_DIR:str = "/app/logs"
 
     # CORS settings
     CORS_ORIGINS: List[str] = ["http://localhost:3000"]
 
     # Server settings
     HOST: str = "0.0.0.0"
-    PORT: int = 8000
+    PORT: int = 9002
 
     # Version
     VERSION: str = "0.1.1"
