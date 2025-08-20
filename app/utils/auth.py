@@ -22,7 +22,7 @@ from app.exceptions.exception_constants import (
 )
 
 from app.repositories.api_key import TortoiseApiKeyStore
-from app.repositories.user import TortoiseUserStore
+from models_src.repositories.user import TortoiseUserStore
 
 
 http_bearer_security_schema = HTTPBearer(auto_error=False)
@@ -97,7 +97,7 @@ class APIKeyAuthenticator(IUserAuthenticator):
                 raise UnauthorizedAccess(
                     log_message=API_KEY_IS_INACTIVE
                 )
-            user_record = await self.user_store.get_by_user_id(api_key_record.user_id)
+            user_record = await self.user_store.find_by_user_id(user_id=api_key_record.user_id)
             if not user_record:
                 raise UnauthorizedAccess(
                     log_message="User not found"
