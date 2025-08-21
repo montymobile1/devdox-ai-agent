@@ -5,7 +5,7 @@ from together import Together
 import cohere
 import asyncio
 import json
-from app.repositories.code_chunks import TortoiseCodeChunksStore as CodeChunksStore
+from models_src.repositories.code_chunks import TortoiseCodeChunksStore as CodeChunksStore
 from models.repo import Repo
 from app.repositories.repo import TortoiseRepoStore as RepoStore
 from app.utils.auth import UserClaims
@@ -46,8 +46,14 @@ class AnalyseService:
             return
 
         query_embedding = self.generate_embedding(question)
-
-        results = await self.code_chunks_store.get_user_repo_chunks(user_claims.sub, repo_info.id, query_embedding, limit=5)
+        
+        results = await self.code_chunks_store.get_user_repo_chunks(
+            user_id=user_claims.sub,
+            repo_id=repo_info.id,
+            query_embedding=query_embedding[0],
+            limit=5
+        )
+        
         if not results:
             yield "No code chunks found."
             return
