@@ -58,7 +58,7 @@ class AnalyseService:
             yield "No code chunks found."
             return
 
-        readme_content = await self._get_readme_content(user_claims.sub, repo_info.id)
+        readme_content = await self._get_readme_content(user_claims.sub, str(repo_info.id))
         if readme_content:
             yield f"README/Setup information:\n{readme_content}"
 
