@@ -7,7 +7,7 @@ import asyncio
 import json
 from models_src.repositories.code_chunks import TortoiseCodeChunksStore as CodeChunksStore
 from models.repo import Repo
-from app.repositories.repo import TortoiseRepoStore as RepoStore
+from models_src.repositories.repo import TortoiseRepoStore as RepoStore
 from app.utils.auth import UserClaims
 from app.config import settings
 
@@ -37,7 +37,7 @@ class AnalyseService:
         readme_content = ""
 
         # Get Repo
-        repo_info = await self.repo_store.find_repo_by_user_relative_path(
+        repo_info = await self.repo_store.find_by_user_and_path(
             user_id=user_claims.sub, relative_path=relative_path
         )
 
