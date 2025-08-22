@@ -5,9 +5,9 @@ from together import Together
 import cohere
 import asyncio
 import json
-from app.repositories.code_chunks import TortoiseCodeChunksStore as CodeChunksStore
+from models_src.repositories.code_chunks import TortoiseCodeChunksStore as CodeChunksStore
 from models.repo import Repo
-from app.repositories.repo import TortoiseRepoStore as RepoStore
+from models_src.repositories.repo import TortoiseRepoStore as RepoStore
 from app.utils.auth import UserClaims
 from app.config import settings
 
@@ -37,7 +37,7 @@ class AnalyseService:
         readme_content = ""
 
         # Get Repo
-        repo_info = await self.repo_store.find_repo_by_user_relative_path(
+        repo_info = await self.repo_store.find_by_user_and_path(
             user_id=user_claims.sub, relative_path=relative_path
         )
 
@@ -46,13 +46,19 @@ class AnalyseService:
             return
 
         query_embedding = self.generate_embedding(question)
-
-        results = await self.code_chunks_store.get_user_repo_chunks(user_claims.sub, repo_info.id, query_embedding, limit=5)
+        
+        results = await self.code_chunks_store.get_user_repo_chunks(
+            user_id=user_claims.sub,
+            repo_id=repo_info.id,
+            query_embedding=query_embedding[0],
+            limit=5
+        )
+        
         if not results:
             yield "No code chunks found."
             return
 
-        readme_content = await self._get_readme_content(user_claims.sub, repo_info.id)
+        readme_content = await self._get_readme_content(user_claims.sub, str(repo_info.id))
         if readme_content:
             yield f"README/Setup information:\n{readme_content}"
 

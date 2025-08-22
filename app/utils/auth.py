@@ -21,8 +21,8 @@ from app.exceptions.exception_constants import (
 
 )
 
-from app.repositories.api_key import TortoiseApiKeyStore
-from app.repositories.user import TortoiseUserStore
+from models_src.repositories.api_key import TortoiseApiKeyStore
+from models_src.repositories.user import TortoiseUserStore
 
 
 http_bearer_security_schema = HTTPBearer(auto_error=False)
@@ -84,7 +84,7 @@ class APIKeyAuthenticator(IUserAuthenticator):
 
         try:
             # Query the database for the API key
-            api_key_record = await self.api_key_store.get_api_key_by_hash(hashed_key)
+            api_key_record = await self.api_key_store.find_by_active_api_key(api_key=hashed_key)
 
 
             if not api_key_record:
@@ -97,7 +97,7 @@ class APIKeyAuthenticator(IUserAuthenticator):
                 raise UnauthorizedAccess(
                     log_message=API_KEY_IS_INACTIVE
                 )
-            user_record = await self.user_store.get_by_user_id(api_key_record.user_id)
+            user_record = await self.user_store.find_by_user_id(user_id=api_key_record.user_id)
             if not user_record:
                 raise UnauthorizedAccess(
                     log_message="User not found"
@@ -154,7 +154,7 @@ class APIKeyManager:
         hashed_key = self.hash_key(plain_key)
 
         # Query existing hashes in DB
-        key_exists = await self.api_key_store.query_for_existing_hashes(hashed_key)
+        key_exists = await self.api_key_store.exists_by_hash_key(hash_key=hashed_key)
 
         if key_exists:
             return None
