@@ -41,7 +41,7 @@ dependencies = [
    "email_validator==2.2.0",
 
     #models
-    "devdox-ai-models @ git+https://github.com/montymobile1/devdox-ai-models.git@eb84735",
+    "devdox-ai-models @ git+https://github.com/montymobile1/devdox-ai-models.git@DEV-12-devdox-ai-agent-migrate-repositories-from-local-to-using-devfox-ai-models-package",
 
     # Encryption package
     "devdox-ai-encryption @ git+https://github.com/montymobile1/devdox-ai-encryption.git@4eefae1",
