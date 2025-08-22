@@ -84,7 +84,7 @@ class APIKeyAuthenticator(IUserAuthenticator):
 
         try:
             # Query the database for the API key
-            api_key_record = await self.api_key_store.find_first_by_api_key_and_is_active(api_key=hashed_key)
+            api_key_record = await self.api_key_store.find_by_active_api_key(api_key=hashed_key)
 
 
             if not api_key_record:
