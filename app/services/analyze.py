@@ -1,12 +1,12 @@
 import logging
 from typing import Annotated, AsyncGenerator, List
 from fastapi import Depends
+from models_src.dto.repo import RepoResponseDTO
 from together import Together
 import cohere
 import asyncio
 import json
 from models_src.repositories.code_chunks import TortoiseCodeChunksStore as CodeChunksStore
-from models.repo import Repo
 from models_src.repositories.repo import TortoiseRepoStore as RepoStore
 from app.utils.auth import UserClaims
 from app.config import settings
@@ -200,7 +200,7 @@ class AnalyseService:
             question: str,
             previous_messages: List[dict] = None,
             instructions: str = "",
-            repo_info:Repo=None,
+            repo_info:RepoResponseDTO=None,
     ):
         """Generate documentation using Together AI with streaming."""
         if previous_messages is None:
