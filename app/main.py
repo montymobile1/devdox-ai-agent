@@ -63,7 +63,7 @@ mcp = FastApiMCP(app,
                  auth_config=AuthConfig(
                      dependencies=[Depends(mcp_auth_interceptor)]
                  ),
-                 include_operations = ["analyze_code"]
+                 include_operations = ["analyze_code", "load_tests"]
                  )
 mcp.mount()
 
