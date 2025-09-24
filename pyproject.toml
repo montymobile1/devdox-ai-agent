@@ -36,15 +36,17 @@ dependencies = [
    "watchdog==6.0.0",
    "clerk-backend-api==2.2.0",
    "pydantic==2.11.4",
-   "pydantic-settings==2.9.1",
+   "pydantic-settings==2.10.1",
    "pydantic_core==2.33.2",
    "email_validator==2.2.0",
 
     #models
-    "devdox-ai-models @ git+https://github.com/montymobile1/devdox-ai-models.git@9ce0798",
+    "devdox-ai-models @ git+https://github.com/montymobile1/devdox-ai-models.git@DV-6-update-models-package",
 
     # Encryption package
     "devdox-ai-encryption @ git+https://github.com/montymobile1/devdox-ai-encryption.git@4eefae1",
+    "devdox-ai-locust==0.1.2",
+    "locust==2.0.0",
     "langchain-together==0.3.0",
     "together==1.5.17",
     "cohere==5.16.1"

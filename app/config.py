@@ -3,7 +3,7 @@ Configuration settings for the DevDox AI Portal API.
 """
 
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, ClassVar
 
 from pydantic_settings import BaseSettings
 
@@ -46,6 +46,7 @@ class Settings(BaseSettings):
     COHERE_API_KEY:str = "test-cohere-key"
 
     LOG_DIR:str = "/app/logs"
+    BASE_DIR: ClassVar[str] = "app/repos"
 
     # CORS settings
     CORS_ORIGINS: List[str] = ["http://localhost:3000"]
@@ -127,7 +128,7 @@ def get_tortoise_config():
         "apps": {
             "models": {
                 "models": [
-                    "models_src",
+                    "models_src.models",
                     "aerich.models",  # Required for aerich migrations
                 ],
                 "default_connection": "default",
