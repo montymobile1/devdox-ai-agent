@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field,  field_validator
 from typing import List, Dict, Optional, Any
 import re
 from enum import Enum
-from datetime import datetime
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -12,7 +12,7 @@ class LoadTestRequest(BaseModel):
     url: str = Field(
         ...,
         description="Swagger url of documentation",
-        example="ttps://api.shop.example.com/v1/openapi.json",
+        example="https://api.shop.example.com/v1/openapi.json",
         min_length=1
     )
     repo_alias_name:str = Field(..., description="The repository alias name", example="my-project")
@@ -261,7 +261,7 @@ class LoadTestError(Exception):
 
 
 @dataclass
-class LoadTestResult:
+class LoadTestResult(BaseModel):
     """Structured result for load test operations"""
     success: bool
     status: LoadTestStatus
@@ -269,11 +269,11 @@ class LoadTestResult:
     created_files: List[Dict[str, Any]] = None
     error_details: Dict[str, Any] = None
     execution_time: float = 0.0
-    timestamp: datetime = None
+    timestamp: Optional[datetime] = None
 
     def __post_init__(self):
         if self.timestamp is None:
-            self.timestamp = datetime.utcnow()
+            self.timestamp = datetime.now(timezone.utc)
         if self.created_files is None:
             self.created_files = []
         if self.error_details is None:

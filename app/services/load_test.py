@@ -52,7 +52,7 @@ class LoadTestService:
             test_file.write_text("test")
             test_file.unlink()
 
-        except (OSError, PermissionError) as e:
+        except OSError as e:
             logger.error(f"Cannot access base directory {self.base_dir}: {e}")
             raise LoadTestError(
                 f"Base directory {self.base_dir} is not accessible",
@@ -61,7 +61,7 @@ class LoadTestService:
             )
 
 
-    async def prepare_repository(self, repo_name) -> Tuple[Path, str]:
+    async def prepare_repository(self, repo_name:str) -> Tuple[Path, str]:
         repo_path = self.base_dir / repo_name
         if repo_path.exists():
             await asyncio.to_thread(shutil.rmtree, repo_path)
@@ -150,9 +150,8 @@ class LoadTestService:
             )
 
         async with self._operation_context(operation_name, user_claims.sub, data.repo_alias_name) as operation_id:
-
             logger.info(
-                f"Processing load test request",
+                "Processing load test request",
                 extra={
                     "operation_id": operation_id,
                     "user_id": user_claims.sub,
@@ -167,7 +166,7 @@ class LoadTestService:
             )
             if not repo_info:
                 logger.warning(
-                    f"Repository not found for user",
+                    "Repository not found for user",
                     extra={
                         "user_id": user_claims.sub,
                         "repo_alias": data.repo_alias_name
@@ -213,7 +212,7 @@ class LoadTestService:
             output_dir = await self.prepare_repository(repo_name)
 
             logger.info(
-                f"Repository prepared, generating tests",
+                "Repository prepared, generating tests",
                 extra={
                     "output_dir": str(output_dir),
                     "endpoint_count": len(endpoints)
@@ -242,7 +241,7 @@ class LoadTestService:
             execution_time = time.time() - start_time
 
             logger.info(
-                f"Load test generation completed successfully",
+                "Load test generation completed successfully",
                 extra={
                     "operation_id": operation_id,
                     "files_created": len(created_files),
@@ -306,7 +305,7 @@ class LoadTestService:
 
         try:
             # Parse schema in thread pool to avoid blocking
-            schema_data = await asyncio.to_thread(parser.parse_schema, api_schema)
+            _ = await asyncio.to_thread(parser.parse_schema, api_schema)
             endpoints = await asyncio.to_thread(parser.parse_endpoints)
             api_info = await asyncio.to_thread(parser.get_schema_info)
 
