@@ -1,12 +1,13 @@
 """
 Configuration settings for the DevDox AI Portal API.
 """
-
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, ClassVar
 
 from pydantic_settings import BaseSettings
 
+current_working_directory_path_object = Path.cwd()
 
 class GitHosting(str, Enum):
     GITLAB = "gitlab"
@@ -57,11 +58,10 @@ class Settings(BaseSettings):
 
     # Version
     VERSION: str = "0.1.1"
-
+    
     class Config:
         """Pydantic config class."""
-
-        env_file = "app/instance/.env"
+        env_file = str(current_working_directory_path_object / "instance" / ".env")
         case_sensitive = True
         git_hosting: Optional[GitHosting] = None
         extra = "ignore"
