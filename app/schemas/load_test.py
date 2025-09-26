@@ -260,7 +260,6 @@ class LoadTestError(Exception):
         super().__init__(self.message)
 
 
-@dataclass
 class LoadTestResult(BaseModel):
     """Structured result for load test operations"""
     success: bool
@@ -273,9 +272,13 @@ class LoadTestResult(BaseModel):
 
     def __post_init__(self):
         if self.timestamp is None:
-            self.timestamp = datetime.now(timezone.utc)
+            # Set timestamp to current UTC time
+            object.__setattr__(self, 'timestamp', datetime.now(timezone.utc))
+
+        if self.error_details is None:
+            object.__setattr__(self, 'error_details', {})
+
         if self.created_files is None:
             self.created_files = []
-        if self.error_details is None:
-            self.error_details = {}
+
 
