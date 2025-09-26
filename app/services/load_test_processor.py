@@ -75,7 +75,6 @@ class LoadTestProcessor(BaseProcessor):
 
 
 
-        start_time = datetime.now(timezone.utc)
         test_type = job_payload.get("test_type", "locust")
 
 

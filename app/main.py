@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI):
             max_processing_time=getattr(settings, 'CONSUMER_MAX_PROCESSING_TIME', 1800)
         )
 
-        worker_task = asyncio.create_task(worker_service.start())
+        _ = asyncio.create_task(worker_service.start())
         logger.info("Consumer started as background task")
         await asyncio.sleep(1)
         logger.info("Application startup complete")

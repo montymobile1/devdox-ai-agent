@@ -90,7 +90,7 @@ class QueueConsumer:
 
             except asyncio.CancelledError:
                 self.logger.info(f"{worker_id} cancelled")
-                break
+                raise
             except Exception as e:
                 self.logger.error(f"{worker_id} error: {e}", exc_info=True)
                 await asyncio.sleep(self.poll_interval)
@@ -103,7 +103,6 @@ class QueueConsumer:
 
             result = await self.queue.dequeue(queue_name, job_types=job_types)
             if result:
-                consecutive_failures = 0  # Reset failure counter
                 await self._process_job(queue_name, result)
             else:
                 # No jobs available, wait before checking again
