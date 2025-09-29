@@ -6,7 +6,7 @@ Load test processor for handling load testing jobs
 import asyncio
 import shutil
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List
 from datetime import datetime, timezone
 from app.infrastructure.base_processor import BaseProcessor
 from app.schemas.load_test import LoadTestRequest
@@ -65,7 +65,7 @@ class LoadTestProcessor(BaseProcessor):
                 "failed_at": end_time.isoformat()
             }
 
-    async def _execute_load_test(self, context_id: str, job_payload: Dict[str, Any]) -> Dict[str, Any]:
+    async def _execute_load_test(self, context_id: str, job_payload: Dict[str, Any])  -> Any:
         """Execute the actual load test"""
         # Replace this with your actual load testing logic
         # This could be:
@@ -81,8 +81,8 @@ class LoadTestProcessor(BaseProcessor):
         # Example: Run a Locust test file
         if test_type == "locust":
 
-            job_request= LoadTestRequest(**job_payload.get("data",{}))
-            return await self._run_locust_test(job_request,context_id)
+            job_request = LoadTestRequest(**job_payload.get("data",{}))
+            return await self._run_locust_test(job_request, context_id)
 
         else:
             # Simulate other test types
@@ -95,16 +95,32 @@ class LoadTestProcessor(BaseProcessor):
                 "success_rate": 0.98
             }
 
-    async def prepare_repository(self, repo_name: str) -> Tuple[Path, str]:
+    async def prepare_repository(self, repo_name: str) ->Path:
+
         repo_path = self.base_dir / repo_name
-        if repo_path.exists():
-            await asyncio.to_thread(shutil.rmtree, repo_path)
-        repo_path.mkdir(parents=True, exist_ok=True)
-        return repo_path
+        try:
+
+                    if repo_path.exists():
+                            await asyncio.to_thread(shutil.rmtree, repo_path)
+                    repo_path.mkdir(parents=True, exist_ok=True)
+
+                    return repo_path
+        except OSError as e:
+            self.logger.exception(f"Failed to prepare repository {repo_name}: {e}")
+        
+            raise
 
 
-    async def _run_locust_test(self, data:LoadTestRequest,context_id:str) -> Dict[str, Any]:
+    async def _run_locust_test(self, data:LoadTestRequest,context_id:str) -> List[Dict[str, Any]]:
         """Run Locust load test"""
+        if not data:
+
+            raise ValueError("LoadTestRequest data is required")
+
+        if not context_id:
+
+            raise ValueError("context_id is required")
+
         load_test_service = APITestGenerator()
 
 

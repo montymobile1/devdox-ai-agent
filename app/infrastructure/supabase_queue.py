@@ -145,7 +145,6 @@ class SupabaseQueue:
 
             # Delete the message from the queue (marks as completed)
             success = await self.queue.delete(queue_name, msg_id)
-            print("success", success)
             if success:
                 logger.info(f"Job {job_data.get('id')} marked as completed")
                 return True

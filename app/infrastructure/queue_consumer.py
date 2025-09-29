@@ -107,8 +107,9 @@ class QueueConsumer:
             else:
                 # No jobs available, wait before checking again
                 await asyncio.sleep(settings.QUEUE_POLLING_INTERVAL_SECONDS or 5)
+                return None
 
-            return None
+            return result
 
         except Exception as e:
             self.logger.error(f"Failed to dequeue job: {e}")
@@ -116,7 +117,7 @@ class QueueConsumer:
 
     async def _process_job(self, worker_id: str, job_data: Dict[str, Any]):
         """Process a single job"""
-        job_id = job_data.get("context_id", "unknown")
+        job_id = job_data.get("context_id") or job_data.get("pgmq_msg_id", "unknown")
 
         job_type = job_data.get("job_type", "unknown")
 

@@ -188,7 +188,7 @@ class LoadTestService:
                 )
 
             payload = {
-                "job_type": "load_tests",
+                "job_type": "load_locust",
                 "payload": {
                     "repo_id": str(repo_info.repo_id),
                     "token_id": str(token_info.id),
@@ -197,14 +197,13 @@ class LoadTestService:
                     "user_id": str(user_claims.sub),
                     "priority": 1,
                     "git_token": str(token_info.id),
-                    "token_value": token_info.token_value,
                     "git_provider": token_info.git_hosting,
                     "context_id": uuid4().hex,
 
                 },
             }
 
-            _ = await supabase_queue.enqueue(
+            job_id = await supabase_queue.enqueue(
                 "testing",
                 payload=payload,
                 priority=1,
@@ -218,7 +217,7 @@ class LoadTestService:
             return LoadTestResult(
                 success=True,
                 status=LoadTestStatus.COMPLETED,
-                message=f"Successfully generated {len(created_files)} test files",
+                message=f"Load test job enqueued (job_id={job_id})",
                 created_files=created_files,
                 execution_time=execution_time,
             )
