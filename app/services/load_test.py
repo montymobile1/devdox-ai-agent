@@ -1,17 +1,18 @@
 from typing import Annotated, List, Dict, Optional, Any, Tuple
 from pathlib import Path
 import asyncio
-import shutil
 import logging
 import time
+from uuid import  uuid4
 from fastapi import Depends, HTTPException
 from contextlib import asynccontextmanager
 
 from pydantic import ValidationError
 from models_src.repositories.repo import TortoiseRepoStore as RepoStore
+from models_src.repositories.git_label import TortoiseGitLabelStore as GitLabelRepository
 from app.schemas.load_test import LoadTestRequest, LoadTestResult, LoadTestStatus, LoadTestError
 from together import Together
-from app.config import settings
+from app.config import settings, supabase_queue
 from app.utils.auth import UserClaims
 from devdox_ai_locust import HybridLocustGenerator
 from devdox_ai_locust.schemas.processing_result import SwaggerProcessingRequest
@@ -22,11 +23,12 @@ logger = logging.getLogger(__name__)
 
 class LoadTestService:
 
-    def __init__(self, repo_store: RepoStore):
+    def __init__(self, repo_store: RepoStore, git_label_repository: GitLabelRepository):
 
         self.repo_store = repo_store
-        self.base_dir = Path(settings.BASE_DIR)
-        self._ensure_base_directory()
+        self.git_label_repository = git_label_repository
+
+
 
         # Service configuration
         self.max_concurrent_operations = getattr(settings, 'MAX_CONCURRENT_LOAD_TESTS', 5)
@@ -37,41 +39,18 @@ class LoadTestService:
         self._operation_semaphore = asyncio.Semaphore(self.max_concurrent_operations)
 
         logger.info(
-            f"LoadTestService initialized with base_dir={self.base_dir}, "
-            f"max_concurrent={self.max_concurrent_operations}, "
+            f"LoadTestService initialized with max_concurrent={self.max_concurrent_operations}, "
             f"timeout={self.operation_timeout}s"
         )
 
-    def _ensure_base_directory(self) -> None:
-        """Ensure base directory exists and is writable"""
-        try:
-            self.base_dir.mkdir(parents=True, exist_ok=True)
-
-            # Test write permissions
-            test_file = self.base_dir / ".write_test"
-            test_file.write_text("test")
-            test_file.unlink()
-
-        except OSError as e:
-            logger.error(f"Cannot access base directory {self.base_dir}: {e}")
-            raise LoadTestError(
-                f"Base directory {self.base_dir} is not accessible",
-                "DIRECTORY_ACCESS_ERROR",
-                {"directory": str(self.base_dir), "error": str(e)}
-            )
 
 
-    async def prepare_repository(self, repo_name:str) -> Tuple[Path, str]:
-        repo_path = self.base_dir / repo_name
-        if repo_path.exists():
-            await asyncio.to_thread(shutil.rmtree, repo_path)
-        repo_path.mkdir(parents=True, exist_ok=True)
-        return repo_path
 
     @classmethod
     def with_dependency(
             cls,
-            repo_store: Annotated[RepoStore, Depends()]
+            repo_store: Annotated[RepoStore, Depends()],
+            git_label_repository: Annotated[GitLabelRepository, Depends()]
     ) -> "LoadTestService":
         """Dependency injection factory with validation"""
         if repo_store is None:
@@ -79,7 +58,12 @@ class LoadTestService:
             raise HTTPException(status_code=500, detail="Repository store not available")
 
         logger.debug(f"Creating LoadTestService with repo_store: {type(repo_store).__name__}")
-        return cls(repo_store)
+        if git_label_repository is None:
+            logger.error("GitLabelRepository dependency is None")
+            raise HTTPException(status_code=500, detail="GitLabelRepository not available")
+        logger.debug(f"Creating LoadTestService with git_label_repository: {type(git_label_repository).__name__}")
+
+        return cls(repo_store, git_label_repository)
 
     @asynccontextmanager
     async def _operation_context(self, operation_name: str, user_id: str, repo_name: str):
@@ -150,6 +134,7 @@ class LoadTestService:
             )
 
         async with self._operation_context(operation_name, user_claims.sub, data.repo_alias_name) as operation_id:
+
             logger.info(
                 "Processing load test request",
                 extra={
@@ -164,6 +149,7 @@ class LoadTestService:
             repo_info = await self.repo_store.find_by_user_and_alias_name(
                 user_id=user_claims.sub, repo_alias_name=data.repo_alias_name
             )
+
             if not repo_info:
                 logger.warning(
                     "Repository not found for user",
@@ -181,80 +167,59 @@ class LoadTestService:
                         "repo_alias": data.repo_alias_name
                     }
                 )
+            token_info = await self.git_label_repository.find_by_token_id_and_user(repo_info.token_id, user_claims.sub)
 
-            # Step 2: Fetch and validate API schema
-            api_schema = await self._fetch_api_schema(data.url)
-            if not api_schema:
-                    return LoadTestResult(
-                        success=False,
-                        status=LoadTestStatus.FAILED,
-                        message="Failed to fetch or parse Swagger/OpenAPI schema",
-                        error_details={
-                            "error_code": "SCHEMA_FETCH_FAILED",
-                            "swagger_url": data.url
-                        }
-                    )
-
-            # Step 3: Parse API schema and extract endpoints
-            endpoints, api_info = await self._parse_api_schema(api_schema)
-            if not endpoints:
-                        return LoadTestResult(
-                            success=False,
-                            status=LoadTestStatus.FAILED,
-                            message="No valid endpoints found in API schema",
-                            error_details={
-                                "error_code": "NO_ENDPOINTS_FOUND",
-                                "schema_info": api_info
-                            }
-                        )
-
-            repo_name = data.get_effective_output_path()
-            output_dir = await self.prepare_repository(repo_name)
-
-            logger.info(
-                "Repository prepared, generating tests",
-                extra={
-                    "output_dir": str(output_dir),
-                    "endpoint_count": len(endpoints)
-                }
-            )
-
-            # Step 5: Generate and create test files
-            created_files = await self._generate_and_create_tests(
-                endpoints=endpoints,
-                api_info=api_info,
-                output_dir=output_dir,
-                custom_requirement=data.custom_requirement or "",
-                host=data.host or "localhost",
-                auth=data.auth or False,
-                operation_id=operation_id
-            )
-
-            if not created_files:
+            if not token_info:
+                logger.warning(
+                    "Git label not found for token",
+                    extra={
+                        "token_id": repo_info.token_id,
+                        "user_id": user_claims.sub
+                    }
+                )
                 return LoadTestResult(
                     success=False,
                     status=LoadTestStatus.FAILED,
-                    message="No test files were created",
-                    error_details={"error_code": "NO_FILES_CREATED"}
+                    message="Git label not found or access denied",
+                    error_details={
+                        "error_code": "GIT_LABEL_NOT_FOUND",
+                        "token_id": repo_info.token_id
+                    }
                 )
 
-            execution_time = time.time() - start_time
+            payload = {
+                "job_type": "load_locust",
+                "payload": {
+                    "repo_id": str(repo_info.repo_id),
+                    "token_id": str(token_info.id),
+                    "config": {},
+                    "data": data.dict(),
+                    "user_id": str(user_claims.sub),
+                    "priority": 1,
+                    "git_token": str(token_info.id),
+                    "git_provider": token_info.git_hosting,
+                    "context_id": uuid4().hex,
 
-            logger.info(
-                "Load test generation completed successfully",
-                extra={
-                    "operation_id": operation_id,
-                    "files_created": len(created_files),
-                    "execution_time": execution_time
-                }
+                },
+            }
+
+            job_id = await supabase_queue.enqueue(
+                "testing",
+                payload=payload,
+                priority=1,
+                job_type="load_locust",
+                user_id=user_claims.sub,
             )
 
+
+            created_files = []
+            execution_time= time.time() - start_time
             return LoadTestResult(
                 success=True,
                 status=LoadTestStatus.COMPLETED,
-                message=f"Successfully generated {len(created_files)} test files",
+                message=f"Load test job enqueued (job_id={job_id})",
                 created_files=created_files,
-                execution_time=execution_time
+                execution_time=execution_time,
             )
         except LoadTestError:
             # Re-raise custom errors

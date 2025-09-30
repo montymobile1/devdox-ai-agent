@@ -3,8 +3,9 @@ FastAPI application entry point for agent MCP server
 """
 
 from contextlib import asynccontextmanager
-
 import uvicorn
+from tortoise import Tortoise
+import asyncio
 from fastapi import FastAPI, Depends
 from fastapi_mcp import FastApiMCP, AuthConfig
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,22 +13,61 @@ from app.config import settings, TORTOISE_ORM
 from app.exceptions.register import register_exception_handlers
 from app.logging_config import setup_logging
 from app.routes import router as api_router
+from app.infrastructure.queue_consumer import QueueConsumer
+from app.config import supabase_queue
 from app.utils.auth import mcp_auth_interceptor
 
 logger = setup_logging()
 
 
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan manager for startup and shutdown events."""
-    # Startup
-    from tortoise import Tortoise
+    """Application lifespan with proper async signal handling"""
+    global worker_service
 
-    await Tortoise.init(config=TORTOISE_ORM)
+    # Startup
+    logger.info(f"Starting DevDox AI Context Worker Service v{settings.VERSION}")
+
+    try:
+        # Initialize database
+        if TORTOISE_ORM:
+            await Tortoise.init(config=TORTOISE_ORM)
+            logger.info("Database initialized")
+
+        worker_service = QueueConsumer(
+            queue=supabase_queue,
+            workers=getattr(settings, 'CONSUMER_WORKERS', 4),
+            poll_interval=getattr(settings, 'CONSUMER_POLL_INTERVAL', 2.0),
+            max_processing_time=getattr(settings, 'CONSUMER_MAX_PROCESSING_TIME', 1800)
+        )
+
+        _ = asyncio.create_task(worker_service.start())
+        logger.info("Consumer started as background task")
+        await asyncio.sleep(1)
+        logger.info("Application startup complete")
+
+    except Exception as e:
+        logger.error(f"Failed to start application: {e}", exc_info=True)
+        raise
+
     yield
 
     # Shutdown
-    await Tortoise.close_connections()
+    logger.info("Application stop initiated")
+    if worker_service and worker_service.running:
+        logger.info("Stopping consumer...")
+        await worker_service.stop()
+        logger.info("Consumer stopped")
+
+
+
+    if TORTOISE_ORM:
+        await Tortoise.close_connections()
+        logger.info("Database connections closed")
+
+    logger.info("Application shutdown complete")
 
 
 # Initialize FastAPI app

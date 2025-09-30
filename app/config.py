@@ -6,7 +6,7 @@ from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, ClassVar
 
 from pydantic_settings import BaseSettings
-
+from app.infrastructure.supabase_queue import SupabaseQueue
 
 class GitHosting(str, Enum):
     GITLAB = "gitlab"
@@ -38,8 +38,10 @@ class Settings(BaseSettings):
     SUPABASE_PORT: int = 5432
     SUPABASE_DB_NAME: str = "postgres"
 
-    DB_MIN_CONNECTIONS: int = 1
-    DB_MAX_CONNECTIONS: int = 10
+    DB_MIN_CONNECTIONS: int = 5
+    DB_MAX_CONNECTIONS: int = 25
+
+    QUEUE_POLLING_INTERVAL_SECONDS: int = 10
 
     TOGETHER_API_KEY: str = "test-clerk-key"
 
@@ -69,6 +71,16 @@ class Settings(BaseSettings):
 
 # Initialize settings instance
 settings = Settings()
+
+# Initialize Supabase queue
+supabase_queue = SupabaseQueue(
+    host=settings.SUPABASE_HOST,
+    port=settings.SUPABASE_PORT,
+    user=settings.SUPABASE_USER,
+    password=settings.SUPABASE_PASSWORD,
+    db_name=settings.SUPABASE_DB_NAME,
+    table_name="testing",
+)
 
 
 def get_database_config() -> Dict[str, Any]:
