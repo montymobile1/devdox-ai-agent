@@ -8,6 +8,10 @@ import asyncio
 import json
 from models_src.repositories.code_chunks import TortoiseCodeChunksStore as CodeChunksStore
 from models_src.repositories.repo import TortoiseRepoStore as RepoStore
+
+from app.infrastructure.qna.formatters.qna_formatter_text import format_qna_text
+from app.infrastructure.qna.qna_generator import generate_project_qna
+from app.infrastructure.qna.qna_models import ProjectQnAPackage
 from app.utils.auth import UserClaims
 from app.config import settings
 
@@ -47,90 +51,102 @@ class AnalyseService:
         if not repo_info:
             yield "No relevant repo found."
             return
-        
-        # Turn EACH question into an embedding vector (i.e., numbers the database can compare).
-        # If the embedding API failed or if somehow no vectors were produced, stop, log it and exit early.
-        q_vecs: List[List[float]] = []
-        try:
-            for q in questions:
-                
-                # generate_embedding returns a list with one vector for a single string,
-                # so we grab the first item ([0]).
-                vecs = self.generate_embedding(q)
-                
-                # Basic safety check: ensure we got a 768-dim vector (what our DB expects).
-                if vecs and len(vecs[0]) == 768:
-                    q_vecs.append(vecs[0])
-        
-        except Exception:
-            logging.exception("Failed to generate question embeddings")
-            yield "Failed to generate embeddings for questions."
-            return
-        
-        if not q_vecs:
-            yield "Failed to embed questions."
-            return
-        
-        # For each question vector, ask the DB for the most similar code chunks.
-        # We keep a global budget (TOTAL_K) to avoid flooding the LLM context.
-        TOTAL_K = 10
-        
-        # Split that budget across however many questions we have (at least 1 each).
-        k_per_q = max(1, TOTAL_K // len(q_vecs))
-        
-        # We'll merge (“fuse”) results from all the per-question searches here.
-        # If the same chunk is relevant to multiple questions, its score will add up.
-        fused: Dict[str, Dict[str, Any]] = {}
-        for vec in q_vecs:
+
+        if questions:
+            # Turn EACH question into an embedding vector (i.e., numbers the database can compare).
+            # If the embedding API failed or if somehow no vectors were produced, stop, log it and exit early.
+            q_vecs: List[List[float]] = []
+            try:
+                for q in questions:
+                    
+                    # generate_embedding returns a list with one vector for a single string,
+                    # so we grab the first item ([0]).
+                    vecs = self.generate_embedding(q)
+                    
+                    # Basic safety check: ensure we got a 768-dim vector (what our DB expects).
+                    if vecs and len(vecs[0]) == 768:
+                        q_vecs.append(vecs[0])
             
-            # Vector search in the user's repo: returns chunks with a similarity 'score'.
-            hits = await self.code_chunks_store.get_user_repo_chunks(
-                user_id=user_claims.sub,
-                repo_id=repo_info.id,
-                query_embedding=vec,
-                limit=k_per_q,
+            except Exception:
+                logging.exception("Failed to generate question embeddings")
+                yield "Failed to generate embeddings for questions."
+                return
+            
+            if not q_vecs:
+                yield "Failed to embed questions."
+                return
+            
+            # For each question vector, ask the DB for the most similar code chunks.
+            # We keep a global budget (TOTAL_K) to avoid flooding the LLM context.
+            TOTAL_K = 10
+            
+            # Split that budget across however many questions we have (at least 1 each).
+            k_per_q = max(1, TOTAL_K // len(q_vecs))
+            
+            # We'll merge (“fuse”) results from all the per-question searches here.
+            # If the same chunk is relevant to multiple questions, its score will add up.
+            fused: Dict[str, Dict[str, Any]] = {}
+            for vec in q_vecs:
+                
+                # Vector search in the user's repo: returns chunks with a similarity 'score'.
+                hits = await self.code_chunks_store.get_user_repo_chunks(
+                    user_id=user_claims.sub,
+                    repo_id=repo_info.id,
+                    query_embedding=vec,
+                    limit=k_per_q,
+                )
+                
+                for h in (hits or []):
+                    
+                    # Create a stable key to identify a chunk across queries.
+                    # Prefer DB primary key if present, otherwise use a content-based fallback.
+                    
+                    key = str(h.get("id")) if h.get("id") else f"{h.get('file_name','')}::{hash((h.get('content','') or '')[:256])}"
+                    
+                    # Sum similarity scores so chunks that match multiple questions bubble up.
+                    fused_score = (fused.get(key, {}).get("fusion_score") or 0.0) + float(h.get("score") or 0.0)
+                    fused[key] = {**h, "fusion_score": fused_score}
+            
+            # Take the top TOTAL_K fused results (best overall across all questions), If nothing relevant was found, stop.
+            results = sorted(fused.values(), key=lambda x: x["fusion_score"], reverse=True)[:TOTAL_K]
+            
+            if not results:
+                yield "No code chunks found."
+                return
+    
+            
+            # If there’s README content for this repo, stream it first as helpful context.
+            readme_content = await self._get_readme_content(user_claims.sub, str(repo_info.id))
+            if readme_content:
+                yield f"README/Setup information:\n{readme_content}"
+            
+            # Improve ordering using a cross-encoder reranker (reads the text, not just vector math).
+            # This looks at the documents versus EACH question and adds up relevance,
+            # so items that answer multiple questions move higher.
+            reranked_results = self.rerank_results_multi(results, questions, top_k=TOTAL_K)
+            
+            # Finally, ask the LLM to write the answer using those top chunks as context.
+            # We pass the questions list so the model answers “Q1, Q2, …” in separate sections.
+            if reranked_results:
+                async for chunk in self._process_reranked_results(
+                        together_client, reranked_results, questions, repo_info
+                ):
+                    # Stream small pieces (“chunks”) of the generated text back to the caller.
+                    yield chunk
+            else:
+                # If reranking somehow produced nothing, say so (very rare edge case).
+                yield json.dumps({"data": "No relevant reranked results found."})
+        else:
+            # GENERATE Q&A SUMMARY In case no questions are passed
+            qna_pkg:ProjectQnAPackage = await generate_project_qna(
+                id_for_repo=str(repo_info.id),
+                project_name=repo_info.repo_name,
+                repo_url=repo_info.html_url,
+                repo_system_reference=repo_info.repo_system_reference,
+                together_client=together_client
             )
             
-            for h in (hits or []):
-                
-                # Create a stable key to identify a chunk across queries.
-                # Prefer DB primary key if present, otherwise use a content-based fallback.
-                
-                key = str(h.get("id")) if h.get("id") else f"{h.get('file_name','')}::{hash((h.get('content','') or '')[:256])}"
-                
-                # Sum similarity scores so chunks that match multiple questions bubble up.
-                fused_score = (fused.get(key, {}).get("fusion_score") or 0.0) + float(h.get("score") or 0.0)
-                fused[key] = {**h, "fusion_score": fused_score}
-        
-        # Take the top TOTAL_K fused results (best overall across all questions), If nothing relevant was found, stop.
-        results = sorted(fused.values(), key=lambda x: x["fusion_score"], reverse=True)[:TOTAL_K]
-        
-        if not results:
-            yield "No code chunks found."
-            return
-
-        
-        # If there’s README content for this repo, stream it first as helpful context.
-        readme_content = await self._get_readme_content(user_claims.sub, str(repo_info.id))
-        if readme_content:
-            yield f"README/Setup information:\n{readme_content}"
-        
-        # Improve ordering using a cross-encoder reranker (reads the text, not just vector math).
-        # This looks at the documents versus EACH question and adds up relevance,
-        # so items that answer multiple questions move higher.
-        reranked_results = self.rerank_results_multi(results, questions, top_k=TOTAL_K)
-        
-        # Finally, ask the LLM to write the answer using those top chunks as context.
-        # We pass the questions list so the model answers “Q1, Q2, …” in separate sections.
-        if reranked_results:
-            async for chunk in self._process_reranked_results(
-                    together_client, reranked_results, questions, repo_info
-            ):
-                # Stream small pieces (“chunks”) of the generated text back to the caller.
-                yield chunk
-        else:
-            # If reranking somehow produced nothing, say so (very rare edge case).
-            yield json.dumps({"data": "No relevant reranked results found."})
+            yield format_qna_text(qna_pkg, show_debug=True, ascii_bars=True)
     
     def rerank_results(self, results: list, last_message_content: str, top_k: int = 10):
         """Rerank results based on multiple factors"""
