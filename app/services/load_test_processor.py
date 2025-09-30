@@ -6,12 +6,127 @@ Load test processor for handling load testing jobs
 import asyncio
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 from datetime import datetime, timezone
+import logging
 from app.infrastructure.base_processor import BaseProcessor
-from app.schemas.load_test import LoadTestRequest
+from app.schemas.load_test import LoadTestRequest, LoadTestConfig, RepositoryValidationError
 from app.services.api_test_generator import APITestGenerator
+from app.utils.encryption import FernetEncryptionHelper
+from devdox_ai_git.repo_fetcher import RepoFetcher
+from models_src.repositories.git_label import TortoiseGitLabelStore as GitLabelRepository
+from models_src.repositories.repo import TortoiseRepoStore as RepoRepository
+from models_src.repositories.user import TortoiseUserStore as UserRepository
 
+logger = logging.getLogger(__name__)
+
+class RepositoryValidationService:
+    """Validates repository access and permissions"""
+
+    def __init__(
+            self,
+            repo_repository: RepoRepository,
+            user_repository:UserRepository,
+            git_label_repository:GitLabelRepository,
+    ):
+        """
+        Initialize validation service.
+
+        Args:
+            repo_repository: Repository data access object
+            user_repository: User data access object
+            git_label_repository: Git label data access object
+        """
+        self._repo_repo = repo_repository
+        self._user_repo = user_repository
+        self._label_repo = git_label_repository
+
+    async def validate_repository_access(
+            self,
+            repo_id: str,
+            user_id: str,
+            token_id: str
+    ) -> Tuple[Any, Any, Any]:
+        """
+        Validate that user has access to repository with given token.
+
+        Performs three validations:
+        1. Repository exists
+        2. User exists
+        3. User has valid git token
+
+        Args:
+            repo_id: Repository UUID
+            user_id: User UUID
+            token_id: Git token UUID
+
+        Returns:
+            Tuple of (repo_info, user_info, git_label)
+
+        Raises:
+            RepositoryValidationError: If any validation fails
+        """
+        logger.info(
+            "Validating repository access",
+            extra={
+                "repo_id": repo_id,
+                "user_id": user_id,
+                "token_id": token_id
+            }
+        )
+
+        # Validate repository exists
+        repo_info = await self._repo_repo.find_by_repo_id(repo_id)
+        if not repo_info:
+            logger.warning(f"Repository not found: {repo_id}")
+            raise RepositoryValidationError(
+                f"Repository not found: {repo_id}",
+                error_code="REPO_NOT_FOUND",
+                details={"repo_id": repo_id}
+            )
+
+        # Validate user exists
+        user_info = await self._user_repo.find_by_user_id(user_id)
+        if not user_info:
+            logger.warning(f"User not found: {user_id}")
+            raise RepositoryValidationError(
+                f"User not found: {user_id}",
+                error_code="USER_NOT_FOUND",
+                details={"user_id": user_id}
+            )
+
+        # Validate git label/token exists for user
+        git_label = await self._label_repo.find_by_token_id_and_user(
+            token_id=token_id,
+            user_id=user_id
+        )
+        if not git_label:
+            logger.warning(f"Git token not found for user: {token_id}")
+            raise RepositoryValidationError(
+                f"Git token not found for user: {token_id}",
+                error_code="TOKEN_NOT_FOUND",
+                details={"token_id": token_id, "user_id": user_id}
+            )
+
+        logger.info("Repository access validated successfully")
+        return repo_info, user_info, git_label
+
+def extract_files_for_commit(result: List[dict], repo_root: Path) -> Dict[str, str]:
+    """Extract file_path and content from processing result"""
+    files_for_commit = {}
+
+    for file_info in result:
+        final_path = file_info['final_path']
+
+        # Get relative path from repo root for Git
+        relative_path = final_path.relative_to(repo_root)
+        git_path = str(relative_path).replace('\\', '/')  # Ensure forward slashes
+
+        # Read file content
+        content = final_path.read_text(encoding='utf-8')
+        files_for_commit[git_path] = content
+
+    return files_for_commit
 
 class LoadTestProcessor(BaseProcessor):
     """Processor for load testing jobs"""
@@ -30,8 +145,24 @@ class LoadTestProcessor(BaseProcessor):
             }
         }
         """
+
         context_id = job_data.get("payload", {}).get("context_id")
         job_payload = job_data.get("payload", {})
+        repo_id  = job_payload.get("repo_id")
+
+        if not repo_id:
+             raise ValueError("repo_id is required in job payload")
+        token_id = job_payload.get("token_id")
+        if not token_id:
+             raise ValueError("token_id is required in job payload")
+        user_id = job_payload.get("user_id")
+        if not user_id:
+             raise ValueError("user_id is required in job payload")
+        git_provider = job_payload.get("git_provider")
+        if not git_provider:
+             raise ValueError("git_provider is required in job payload")
+
+
 
         self.logger.info(f"Processing load test for context: {context_id}")
 
@@ -39,7 +170,10 @@ class LoadTestProcessor(BaseProcessor):
 
         try:
             # Simulate load test execution (replace with actual logic)
-            result = await self._execute_load_test(context_id,job_payload)
+            result, directory_test = await self._execute_load_test(context_id,job_payload)
+            if directory_test:
+                # Upload the directory to Supabase storage
+                await self.setup_test_repository_workflow(result, directory_test, repo_id, token_id, user_id,git_provider)
 
             end_time = datetime.now(timezone.utc)
             processing_time = (end_time - start_time).total_seconds()
@@ -65,7 +199,7 @@ class LoadTestProcessor(BaseProcessor):
                 "failed_at": end_time.isoformat()
             }
 
-    async def _execute_load_test(self, context_id: str, job_payload: Dict[str, Any])  -> Any:
+    async def _execute_load_test(self, context_id: str, job_payload: Dict[str, Any])  -> Tuple[Any, Path|None]:
         """Execute the actual load test"""
         # Replace this with your actual load testing logic
         # This could be:
@@ -75,11 +209,11 @@ class LoadTestProcessor(BaseProcessor):
 
 
 
-        test_type = job_payload.get("test_type", "locust")
+        test_type = job_payload.get("test_type", LoadTestConfig.DEFAULT_TEST_TYPE)
 
 
         # Example: Run a Locust test file
-        if test_type == "locust":
+        if test_type == LoadTestConfig.DEFAULT_TEST_TYPE:
 
             job_request = LoadTestRequest(**job_payload.get("data",{}))
             return await self._run_locust_test(job_request, context_id)
@@ -93,7 +227,7 @@ class LoadTestProcessor(BaseProcessor):
                 "requests_per_second": 100,
                 "total_requests": 500,
                 "success_rate": 0.98
-            }
+            },None
 
     async def prepare_repository(self, repo_name: str) ->Path:
 
@@ -111,7 +245,7 @@ class LoadTestProcessor(BaseProcessor):
             raise
 
 
-    async def _run_locust_test(self, data:LoadTestRequest,context_id:str) -> List[Dict[str, Any]]:
+    async def _run_locust_test(self, data:LoadTestRequest,context_id:str) -> Tuple[List[Dict[str, Any]], Path]:
         """Run Locust load test"""
         if not data:
 
@@ -128,10 +262,109 @@ class LoadTestProcessor(BaseProcessor):
 
         output_dir = await self.prepare_repository(repo_name)
 
-        return await load_test_service.generate_tests_from_swagger_url(swagger_url=data.url,
+        result =  await load_test_service.generate_tests_from_swagger_url(swagger_url=data.url,
                                                                           output_dir=output_dir,
                                                                           custom_requirement=data.custom_requirement or "",
                                                                           host=data.host or "localhost",
                                                                           auth=data.auth or False,
                                                                           operation_id=context_id
                                                                           )
+        if result:
+            return result, output_dir
+        else:
+            raise ValueError("Load test generation failed")
+
+
+
+    async def setup_test_repository_workflow(self, result:Any, directory_test: Path, repo_id: str, token_id: str, user_id: str,git_provider:str) -> None:
+        """
+        Create a new repository and commit generated test files.
+
+        This method performs the following operations:
+        1. Validates repository, user, and token access
+        2. Decrypts authentication token
+        3. Creates new repository with specified visibility
+        4. Creates feature branch for tests
+        5. Commits test files to the branch
+
+        Args:
+            result: List of generated test file information
+            directory_test: Path to directory containing test files
+            repo_id: UUID of the repository to replicate settings from
+            token_id: UUID of the git authentication token
+            user_id: UUID of the user creating the repository
+            git_provider: Git provider name ('github', 'gitlab', etc.)
+
+        Raises:
+            RepositoryValidationError: If repo, user, or token validation fails
+            TokenDecryptionError: If token decryption fails
+            GitOperationError: If git operations (create/branch/commit) fail
+
+        Returns:
+            None. Logs success/failure status.
+        """
+        created_branch = False
+        created_repo = False
+        fetcher, fetcher_data_mapper = RepoFetcher().get_components(git_provider)
+        repo_name = directory_test.name
+        if not fetcher:
+            raise Exception("Invalid git provider")
+
+
+        validation_service = RepositoryValidationService(repo_repository=RepoRepository(),user_repository=UserRepository(),git_label_repository=GitLabelRepository())
+        repo_info, user_info, git_label = await  validation_service.validate_repository_access(repo_id, user_id,
+                                                                                              token_id)
+
+        try:
+            decrypted_label_token = FernetEncryptionHelper().decrypt_for_user(
+                git_label.token_value,
+                salt_b64=FernetEncryptionHelper().decrypt(user_info.encryption_salt),
+            )
+
+
+
+            files = extract_files_for_commit(result, directory_test)
+
+            created_repo = fetcher.create_repository(token=decrypted_label_token, name=repo_name, description="", visibility=repo_info.visibility)
+            if created_repo:
+
+                created_branch = fetcher.create_branch(decrypted_label_token,  created_repo.full_name,LoadTestConfig.get_branch_name(repo_name) , created_repo.default_branch)
+                if created_branch:
+                    self.logger.info(f"Branch feature_locust created successfully")
+
+                    commit_result = fetcher.commit_files(decrypted_label_token, created_repo.full_name, LoadTestConfig.get_branch_name(repo_name), files,
+                                                         LoadTestConfig.get_commit_message(repo_name),author_name=repo_info.repo_author_name, author_email=repo_info.repo_author_email)
+                else:
+                    self.logger.error(f"Branch feature_locust creation failed")
+
+                self.logger.info(f"Repository {repo_id} created successfully")
+            else:
+                self.logger.error(f"Repository {repo_id} creation failed")
+
+
+        except Exception as e:
+
+            # Rollback: delete branch if created
+
+            if created_branch:
+                try:
+
+                    fetcher.delete_branch(decrypted_label_token, created_repo.full_name, LoadTestConfig.get_branch_name(repo_name))
+
+                except Exception as rollback_error:
+
+                    self.logger.error(f"Rollback failed delete branch: {rollback_error}")
+
+            # Rollback: delete repo if created
+
+            if created_repo:
+
+                try:
+
+                    fetcher.delete_repository(decrypted_label_token, created_repo.full_name)
+
+                except Exception as rollback_error:
+
+                    self.logger.error(f"Rollback failed delete repo: {rollback_error}")
+
+            self.logger.error(f"Repository creation failed: {e}")
