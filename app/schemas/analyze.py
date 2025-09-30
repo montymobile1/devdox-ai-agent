@@ -28,7 +28,7 @@ class AnalyseRequest(BaseModel):
         cleaned: List[str] = []
         seen_ci = set()
         
-        if v is None:
+        if not v:
             return []
         
         for q in v:
