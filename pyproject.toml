@@ -43,7 +43,7 @@ dependencies = [
     "tembo-pgmq-python==0.10.0",
 
     #models
-    "devdox-ai-models @ git+https://github.com/montymobile1/devdox-ai-models.git@DEV-13-devdox-ai-context-fixing-a-model-method-that-was-moved-incorrectly",
+    "devdox-ai-models @ git+https://github.com/montymobile1/devdox-ai-models.git@DEV-23-implement-fixes-and-changes-to-current-existing-code-in-devdox-ai-model-for-devdox-ai-agent-to-achieve-working-state",
 
     # Encryption package
     "devdox-ai-encryption @ git+https://github.com/montymobile1/devdox-ai-encryption.git@4eefae1",
