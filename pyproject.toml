@@ -43,7 +43,7 @@ dependencies = [
     "tembo-pgmq-python==0.10.0",
 
     #models
-    "devdox-ai-models @ git+https://github.com/montymobile1/devdox-ai-models.git@b0395a4",
+    "devdox-ai-models @ git+https://github.com/montymobile1/devdox-ai-models.git@466a875",
 
     # Encryption package
     "devdox-ai-encryption @ git+https://github.com/montymobile1/devdox-ai-encryption.git@4eefae1",
