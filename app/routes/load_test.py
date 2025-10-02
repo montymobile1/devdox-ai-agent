@@ -5,7 +5,7 @@ from app.schemas.load_test import (LoadTestRequest, LoadTestResult)
 from app.services.load_test import (
     LoadTestService
 )
-from app.utils.auth import get_mcp_aware_user_context, UserClaims, get_git_credentials
+from app.utils.auth import get_mcp_aware_user_context, UserClaims
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +24,7 @@ async def load_tests(
 
         user_claims: Annotated[UserClaims, Depends(get_mcp_aware_user_context)],
         request: LoadTestRequest,
-        service: Annotated[LoadTestService, Depends(LoadTestService.with_dependency)],
-        git_creds: Annotated[dict, Depends(get_git_credentials)],
+        service: Annotated[LoadTestService, Depends(LoadTestService.with_dependency)]
 ) -> LoadTestResult:
     """
     Load tests using locust repo

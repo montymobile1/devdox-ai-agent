@@ -325,20 +325,3 @@ def extract_git_credentials_from_request(request: Request) -> dict:
         "token": git_token,
         "provider": git_provider
     }
-
-
-async def get_git_credentials(
-        user_claims: Annotated[UserClaims, Depends(get_mcp_aware_user_context)]
-) -> dict:
-    """
-    Dependency that provides Git credentials from user context
-
-    This can be injected into any endpoint that needs Git access
-    """
-
-
-    return {
-        "token": user_claims.git_token,
-        "provider": user_claims.git_provider or "github",
-        "user_id": user_claims.sub
-    }

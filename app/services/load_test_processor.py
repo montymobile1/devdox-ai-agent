@@ -128,6 +128,25 @@ def extract_files_for_commit(result: List[dict], repo_root: Path) -> Dict[str, s
 
     return files_for_commit
 
+def  get_token(token_db:str,encryption_salt:str, auth_token:str|None) -> str:
+    if auth_token:
+        return  FernetEncryptionHelper().decrypt(auth_token)
+    else:
+        return FernetEncryptionHelper().decrypt_for_user(
+                    token_db,
+                    salt_b64=FernetEncryptionHelper().encryption.decrypt(encryption_salt)
+                )
+def get_repo_info(git_provider, created_repo):
+    if git_provider == "github":
+        repo_full_name = created_repo.full_name
+        default_branch = created_repo.default_branch
+    elif git_provider == "gitlab":
+        repo_full_name = created_repo.id
+        default_branch = created_repo.default_branch
+    return repo_full_name, default_branch
+
+
+
 class LoadTestProcessor(BaseProcessor):
     """Processor for load testing jobs"""
 
@@ -306,7 +325,7 @@ class LoadTestProcessor(BaseProcessor):
         """
         created_branch = False
         created_repo = False
-        fetcher, fetcher_data_mapper = RepoFetcher().get_components(git_provider)
+        fetcher, _ = RepoFetcher().get_components(git_provider)
 
 
         validation_service = RepositoryValidationService(repo_repository=RepoRepository(),user_repository=UserRepository(),git_label_repository=GitLabelRepository())
@@ -315,30 +334,17 @@ class LoadTestProcessor(BaseProcessor):
 
         repo_name = directory_test.name
         if not fetcher:
-            raise Exception("Invalid git provider")
+            raise ValueError("Invalid git provider")
 
         try:
-            if auth_token:
-                decrypted_label_token = FernetEncryptionHelper().decrypt(auth_token)
-            else:
-                decrypted_label_token = FernetEncryptionHelper().decrypt_for_user(
-                    git_label.token_value,
-                    salt_b64=FernetEncryptionHelper().decrypt(user_info.encryption_salt),
-                )
-
+            decrypted_label_token = get_token(git_label.token_value,user_info.encryption_salt,auth_token)
 
 
             files = extract_files_for_commit(result, directory_test)
 
             created_repo = fetcher.create_repository(token=decrypted_label_token, name=repo_name, description="", visibility=repo_info.visibility)
             if created_repo:
-                if git_provider == "github":
-                    repo_full_name = created_repo.full_name
-                    default_branch = created_repo.default_branch
-                elif git_provider == "gitlab":
-                    repo_full_name = created_repo.id
-                    default_branch = created_repo.default_branch
-
+                repo_full_name, default_branch = get_repo_info(git_provider, created_repo)
 
 
                 created_branch = fetcher.create_branch(decrypted_label_token,repo_full_name,
@@ -349,10 +355,10 @@ class LoadTestProcessor(BaseProcessor):
                     self.logger.info(f"Branch feature_locust created successfully")
 
 
-                    commit_result = fetcher.commit_files(decrypted_label_token, repo_full_name, LoadTestConfig.get_branch_name(repo_name), files,
+                    _ = fetcher.commit_files(decrypted_label_token, repo_full_name, LoadTestConfig.get_branch_name(repo_name), files,
                                                         LoadTestConfig.get_commit_message(repo_name),author_name=repo_info.repo_author_name, author_email=repo_info.repo_author_email)
                 else:
-                    self.logger.error(f"Branch feature_locust creation failed")
+                    self.logger.error(f"Branch feature_locust creation failed for {repo_id}")
 
                 self.logger.info(f"Repository {repo_id} created successfully")
             else:
