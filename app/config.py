@@ -3,6 +3,7 @@ Configuration settings for the DevDox AI Portal API.
 """
 
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, ClassVar
 
 from pydantic_settings import BaseSettings
@@ -62,8 +63,7 @@ class Settings(BaseSettings):
 
     class Config:
         """Pydantic config class."""
-
-        env_file = "app/instance/.env"
+        env_file = str(Path(__file__).resolve().parent / "instance" / ".env")
         case_sensitive = True
         git_hosting: Optional[GitHosting] = None
         extra = "ignore"
