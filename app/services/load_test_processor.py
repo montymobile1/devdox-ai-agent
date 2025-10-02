@@ -331,9 +331,10 @@ class LoadTestProcessor(BaseProcessor):
         Returns:
             None. Logs success/failure status.
         """
-        created_branch = False
-        created_repo = False
+
         fetcher, _ = RepoFetcher().get_components(git_provider)
+        if not fetcher:
+            raise ValueError("Invalid git provider")
 
 
         validation_service = RepositoryValidationService(repo_repository=RepoRepository(),user_repository=UserRepository(),git_label_repository=GitLabelRepository())
@@ -341,61 +342,134 @@ class LoadTestProcessor(BaseProcessor):
                                                                                               token_id)
 
         repo_name = directory_test.name
-        if not fetcher:
-            raise ValueError("Invalid git provider")
+
 
         try:
-            decrypted_label_token = get_token(git_label.token_value, user_info.encryption_salt, auth_token)
+            decrypted_token = get_token(git_label.token_value, user_info.encryption_salt, auth_token)
 
 
             files = extract_files_for_commit(result, directory_test)
-            repo_full_name=""
-            created_repo = fetcher.create_repository(token=decrypted_label_token, name=repo_name, description="", visibility=repo_info.visibility)
-            if created_repo:
-                repo_full_name, default_branch = get_repo_info(git_provider, created_repo)
+            await self._execute_git_workflow(
+                    fetcher=fetcher,
+                    token=decrypted_token,
+                    repo_name=repo_name,
+                    repo_info=repo_info,
+                    git_provider=git_provider,
+                    files=files,
+                    repo_id=repo_id
+                )
+        except Exception as e:
+                self.logger.error(f"Repository creation failed: {e}")
+                raise
 
+    def _rollback_git_operations(
+            self,
+            fetcher,
+            token: str,
+            repo_full_name: str,
+            branch_name: str,
+            created_branch: bool,
+            created_repo
+    ) -> None:
+        """
+        Rollback git operations in reverse order.
 
-                created_branch = fetcher.create_branch(decrypted_label_token,repo_full_name,
-                                                       LoadTestConfig.get_branch_name(repo_name),
-                                                       default_branch)
+        Attempts to delete created branch and repository if they exist.
+        Logs all rollback attempts and failures without raising exceptions.
 
-                if created_branch:
-                    self.logger.info(f"Branch feature_locust created successfully")
+        Args:
+            fetcher: Git provider fetcher instance
+            token: Decrypted authentication token
+            repo_full_name: Full repository name/ID
+            branch_name: Name of the branch to delete
+            created_branch: Whether branch was successfully created
+            created_repo: Created repository object (None if not created)
 
+        Returns:
+            None. All exceptions are caught and logged.
+        """
+        # Delete branch first (less destructive)
+        if created_branch and repo_full_name and branch_name:
+            try:
+                fetcher.delete_branch(token, repo_full_name, branch_name)
+                self.logger.info(f"Rolled back branch: {branch_name}")
+            except Exception as rollback_error:
+                self.logger.error(
+                    f"Rollback failed (delete branch '{branch_name}'): {rollback_error}"
+                )
 
-                    _ = fetcher.commit_files(decrypted_label_token, repo_full_name, LoadTestConfig.get_branch_name(repo_name), files,
-                                                        LoadTestConfig.get_commit_message(repo_name),author_name=repo_info.repo_author_name, author_email=repo_info.repo_author_email)
-                else:
-                    self.logger.error(f"Branch feature_locust creation failed for {repo_id}")
+        # Delete repository (more destructive)
+        if created_repo and repo_full_name:
+            try:
+                fetcher.delete_repository(token, repo_full_name)
+                self.logger.info(f"Rolled back repository: {repo_full_name}")
+            except Exception as rollback_error:
+                self.logger.error(
+                    f"Rollback failed (delete repository '{repo_full_name}'): {rollback_error}"
+                )
 
-                self.logger.info(f"Repository {repo_id} created successfully")
-            else:
+    async def _execute_git_workflow(
+            self,
+            fetcher,
+            token: str,
+            repo_name: str,
+            repo_info,
+            git_provider: str,
+            files: list,
+            repo_id: str
+    ) -> None:
+        """Execute git operations with automatic rollback on failure."""
+        created_repo = None
+        created_branch = False
+        repo_full_name = ""
+        branch_name = LoadTestConfig.get_branch_name(repo_name)
+
+        try:
+            # Create repository
+            created_repo = fetcher.create_repository(
+                token=token,
+                name=repo_name,
+                description="",
+                visibility=repo_info.visibility
+            )
+
+            if not created_repo:
                 self.logger.error(f"Repository {repo_id} creation failed")
+                return
 
+            self.logger.info(f"Repository {repo_id} created successfully")
+            repo_full_name, default_branch = get_repo_info(git_provider, created_repo)
+
+            # Create branch
+            created_branch = fetcher.create_branch(
+                token, repo_full_name, branch_name, default_branch
+            )
+
+            if not created_branch:
+                self.logger.error(f"Branch {branch_name} creation failed for {repo_id}")
+                raise ValueError(f"Failed to create branch {branch_name}")
+
+            self.logger.info(f"Branch {branch_name} created successfully")
+
+            # Commit files
+            fetcher.commit_files(
+                token,
+                repo_full_name,
+                branch_name,
+                files,
+                LoadTestConfig.get_commit_message(repo_name),
+                author_name=repo_info.repo_author_name,
+                author_email=repo_info.repo_author_email
+            )
 
         except Exception as e:
-
-            # Rollback: delete branch if created
-
-            if created_branch:
-                try:
-
-                    fetcher.delete_branch(decrypted_label_token, repo_full_name, LoadTestConfig.get_branch_name(repo_name))
-
-                except Exception as rollback_error:
-
-                    self.logger.error(f"Rollback failed delete branch: {rollback_error}")
-
-            # Rollback: delete repo if created
-
-            if created_repo:
-
-                try:
-
-                    fetcher.delete_repository(decrypted_label_token, repo_full_name)
-
-                except Exception as rollback_error:
-
-                    self.logger.error(f"Rollback failed delete repo: {rollback_error}")
-
-            self.logger.error(f"Repository creation failed: {e} {decrypted_label_token} {repo_full_name}")
+            # Rollback operations
+            self._rollback_git_operations(
+                fetcher=fetcher,
+                token=token,
+                repo_full_name=repo_full_name,
+                branch_name=branch_name,
+                created_branch=created_branch,
+                created_repo=created_repo
+            )
+            raise
