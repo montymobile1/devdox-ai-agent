@@ -462,7 +462,7 @@ class LoadTestProcessor(BaseProcessor):
                 author_email=repo_info.repo_author_email
             )
 
-        except Exception as e:
+        except:
             # Rollback operations
             self._rollback_git_operations(
                 fetcher=fetcher,
