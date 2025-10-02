@@ -16,11 +16,11 @@ class LoadTestConfig:
 
     @staticmethod
     def get_branch_name(repo_name: str) -> str:
-        return f"feature/load-tests-{repo_name}"
+        return f"{LoadTestConfig.DEFAULT_BRANCH_NAME}-{repo_name}"
 
     @staticmethod
     def get_commit_message(repo_name: str) -> str:
-        return f"feat: Add load tests for {repo_name}"
+        return LoadTestConfig.DEFAULT_COMMIT_MESSAGE_TEMPLATE.format(repo_name=repo_name)
 
 class LoadTestRequest(BaseModel):
     """Request wrapper for Load tests"""

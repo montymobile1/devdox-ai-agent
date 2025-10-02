@@ -116,15 +116,23 @@ def extract_files_for_commit(result: List[dict], repo_root: Path) -> Dict[str, s
     files_for_commit = {}
 
     for file_info in result:
-        final_path = file_info['final_path']
+        final_path = file_info.get('final_path')
+        if not final_path:
+            logger.warning(f"Missing final_path for file: {file_info}")
+            continue
 
         # Get relative path from repo root for Git
         relative_path = final_path.relative_to(repo_root)
         git_path = str(relative_path).replace('\\', '/')  # Ensure forward slashes
+        try:
+            # Read file content
+            content = final_path.read_text(encoding='utf-8')
+            files_for_commit[git_path] = content
+        except (OSError, UnicodeDecodeError) as e:
+            logger.error(f"Failed to read file {final_path}: {e}")
+            raise
+        
 
-        # Read file content
-        content = final_path.read_text(encoding='utf-8')
-        files_for_commit[git_path] = content
 
     return files_for_commit
 
@@ -337,7 +345,7 @@ class LoadTestProcessor(BaseProcessor):
             raise ValueError("Invalid git provider")
 
         try:
-            decrypted_label_token = get_token(git_label.token_value,user_info.encryption_salt,auth_token)
+            decrypted_label_token = get_token(git_label.token_value, user_info.encryption_salt, auth_token)
 
 
             files = extract_files_for_commit(result, directory_test)
