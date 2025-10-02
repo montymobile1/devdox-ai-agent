@@ -3,17 +3,17 @@ from pathlib import Path
 import asyncio
 import logging
 import time
-from uuid import  uuid4
 from fastapi import Depends, HTTPException
 from contextlib import asynccontextmanager
 
 from pydantic import ValidationError
 from models_src.repositories.repo import TortoiseRepoStore as RepoStore
 from models_src.repositories.git_label import TortoiseGitLabelStore as GitLabelRepository
-from app.schemas.load_test import LoadTestRequest, LoadTestResult, LoadTestStatus, LoadTestError
+from app.schemas.load_test import LoadTestRequest, LoadTestResult, LoadTestStatus, LoadTestError, LoadLocustPayload
 from together import Together
 from app.config import settings, supabase_queue
 from app.utils.auth import UserClaims
+from app.utils.encryption import FernetEncryptionHelper
 from devdox_ai_locust import HybridLocustGenerator
 from devdox_ai_locust.schemas.processing_result import SwaggerProcessingRequest
 from devdox_ai_locust.utils.swagger_utils import get_api_schema
@@ -187,22 +187,21 @@ class LoadTestService:
                     }
                 )
 
+
+            job_payload = LoadLocustPayload(
+                repo_id = str(repo_info.repo_id),
+                token_id = str(token_info.id),
+                data = data.dict(),
+                user_id = str(user_claims.sub),
+                git_token = str(token_info.id),
+                git_provider = token_info.git_hosting,
+                auth_token = FernetEncryptionHelper().encrypt(
+                    user_claims.git_token ) if token_info.git_hosting == user_claims.git_provider else None,
+            )
             payload = {
                 "job_type": "load_locust",
-                "payload": {
-                    "repo_id": str(repo_info.repo_id),
-                    "token_id": str(token_info.id),
-                    "config": {},
-                    "data": data.dict(),
-                    "user_id": str(user_claims.sub),
-                    "priority": 1,
-                    "git_token": str(token_info.id),
-                    "git_provider": token_info.git_hosting,
-                    "context_id": uuid4().hex,
-
-                },
+                "payload": job_payload.dict(),
             }
-
             job_id = await supabase_queue.enqueue(
                 "testing",
                 payload=payload,

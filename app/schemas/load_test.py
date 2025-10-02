@@ -4,6 +4,7 @@ import re
 from enum import Enum
 from datetime import datetime, timezone
 from dataclasses import dataclass
+from uuid import uuid4
 from urllib.parse import urlparse
 
 
@@ -322,6 +323,18 @@ class TestGenerationError(LoadTestError):
     ):
         super().__init__(message, error_code, details)
 
+
+class LoadLocustPayload(BaseModel):
+    repo_id: str
+    token_id: str
+    config: dict = Field(default_factory=dict)
+    data: dict
+    user_id: str
+    priority: int = 1
+    git_token: str
+    git_provider: str
+    auth_token: Optional[str] = None
+    context_id: str = Field(default_factory=lambda: uuid4().hex)
 
 class LoadTestResult(BaseModel):
     """Structured result for load test operations"""

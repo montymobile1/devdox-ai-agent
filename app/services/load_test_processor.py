@@ -161,6 +161,7 @@ class LoadTestProcessor(BaseProcessor):
         git_provider = job_payload.get("git_provider")
         if not git_provider:
              raise ValueError("git_provider is required in job payload")
+        auth_token = job_payload.get("auth_token")
 
 
 
@@ -173,7 +174,7 @@ class LoadTestProcessor(BaseProcessor):
             result, directory_test = await self._execute_load_test(context_id,job_payload)
             if directory_test:
                 # Upload the directory to Supabase storage
-                await self.setup_test_repository_workflow(result, directory_test, repo_id, token_id, user_id,git_provider)
+                await self.setup_test_repository_workflow(result, directory_test, repo_id, token_id, user_id,git_provider,auth_token)
 
             end_time = datetime.now(timezone.utc)
             processing_time = (end_time - start_time).total_seconds()
@@ -276,7 +277,7 @@ class LoadTestProcessor(BaseProcessor):
 
 
 
-    async def setup_test_repository_workflow(self, result:Any, directory_test: Path, repo_id: str, token_id: str, user_id: str,git_provider:str) -> None:
+    async def setup_test_repository_workflow(self, result:Any, directory_test: Path, repo_id: str, token_id: str, user_id: str,git_provider:str,auth_token:str|None) -> None:
         """
         Create a new repository and commit generated test files.
 
@@ -306,20 +307,24 @@ class LoadTestProcessor(BaseProcessor):
         created_branch = False
         created_repo = False
         fetcher, fetcher_data_mapper = RepoFetcher().get_components(git_provider)
-        repo_name = directory_test.name
-        if not fetcher:
-            raise Exception("Invalid git provider")
 
 
         validation_service = RepositoryValidationService(repo_repository=RepoRepository(),user_repository=UserRepository(),git_label_repository=GitLabelRepository())
         repo_info, user_info, git_label = await  validation_service.validate_repository_access(repo_id, user_id,
                                                                                               token_id)
 
+        repo_name = directory_test.name
+        if not fetcher:
+            raise Exception("Invalid git provider")
+
         try:
-            decrypted_label_token = FernetEncryptionHelper().decrypt_for_user(
-                git_label.token_value,
-                salt_b64=FernetEncryptionHelper().decrypt(user_info.encryption_salt),
-            )
+            if auth_token:
+                decrypted_label_token = FernetEncryptionHelper().decrypt(auth_token)
+            else:
+                decrypted_label_token = FernetEncryptionHelper().decrypt_for_user(
+                    git_label.token_value,
+                    salt_b64=FernetEncryptionHelper().decrypt(user_info.encryption_salt),
+                )
 
 
 
@@ -327,13 +332,25 @@ class LoadTestProcessor(BaseProcessor):
 
             created_repo = fetcher.create_repository(token=decrypted_label_token, name=repo_name, description="", visibility=repo_info.visibility)
             if created_repo:
+                if git_provider == "github":
+                    repo_full_name = created_repo.full_name
+                    default_branch = created_repo.default_branch
+                elif git_provider == "gitlab":
+                    repo_full_name = created_repo.id
+                    default_branch = created_repo.default_branch
 
-                created_branch = fetcher.create_branch(decrypted_label_token,  created_repo.full_name,LoadTestConfig.get_branch_name(repo_name) , created_repo.default_branch)
+
+
+                created_branch = fetcher.create_branch(decrypted_label_token,repo_full_name,
+                                                       LoadTestConfig.get_branch_name(repo_name),
+                                                       default_branch)
+
                 if created_branch:
                     self.logger.info(f"Branch feature_locust created successfully")
 
-                    commit_result = fetcher.commit_files(decrypted_label_token, created_repo.full_name, LoadTestConfig.get_branch_name(repo_name), files,
-                                                         LoadTestConfig.get_commit_message(repo_name),author_name=repo_info.repo_author_name, author_email=repo_info.repo_author_email)
+
+                    commit_result = fetcher.commit_files(decrypted_label_token, repo_full_name, LoadTestConfig.get_branch_name(repo_name), files,
+                                                        LoadTestConfig.get_commit_message(repo_name),author_name=repo_info.repo_author_name, author_email=repo_info.repo_author_email)
                 else:
                     self.logger.error(f"Branch feature_locust creation failed")
 
@@ -349,7 +366,7 @@ class LoadTestProcessor(BaseProcessor):
             if created_branch:
                 try:
 
-                    fetcher.delete_branch(decrypted_label_token, created_repo.full_name, LoadTestConfig.get_branch_name(repo_name))
+                    fetcher.delete_branch(decrypted_label_token, repo_full_name, LoadTestConfig.get_branch_name(repo_name))
 
                 except Exception as rollback_error:
 
@@ -361,7 +378,7 @@ class LoadTestProcessor(BaseProcessor):
 
                 try:
 
-                    fetcher.delete_repository(decrypted_label_token, created_repo.full_name)
+                    fetcher.delete_repository(decrypted_label_token, repo_full_name)
 
                 except Exception as rollback_error:
 

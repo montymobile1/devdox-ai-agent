@@ -6,6 +6,7 @@ import hashlib
 import logging
 import secrets
 import string
+import os
 from dataclasses import dataclass
 from typing import  Annotated, Dict, Optional, Protocol
 
@@ -34,6 +35,8 @@ class UserClaims(BaseModel):
     sub: str
     email: Optional[str] = None
     name: Optional[str] = None
+    git_token: Optional[str] = None
+    git_provider: Optional[str] = None
 
     model_config = ConfigDict(extra="ignore")
 
@@ -216,7 +219,14 @@ async def get_authenticated_user(
 
     try:
         # Pass the API key directly to the authenticator
-        return await authenticator.authenticate(request, api_key_header)
+        user_claims = await authenticator.authenticate(request, api_key_header)
+
+        # ✨ NEW: Inject git credentials from environment/headers
+        git_creds = extract_git_credentials_from_request(request)
+        user_claims.git_token = git_creds.get("token")
+        user_claims.git_provider = git_creds.get("provider")
+
+        return user_claims
     except Exception as e:
         raise UnauthorizedAccess(
             reason=INVALID_API_KEY,
@@ -248,7 +258,7 @@ mcp_context = MCPUserContextManager()
 
 def mcp_auth_interceptor(
         request: Request,
-        user_claims: UserClaims = Depends(get_authenticated_user)
+        user_claims: UserClaims = Depends(get_authenticated_user),
 ) -> UserClaims:
     """Store user context when MCP authenticates"""
     api_key = request.headers.get("api-key") or request.headers.get("API-KEY")
@@ -263,14 +273,72 @@ async def get_mcp_aware_user_context(request: Request) -> UserClaims:
     """Get user context for both MCP and regular requests"""
     host = request.headers.get("host", "")
     api_key_header = request.headers.get("api-key") or request.headers.get("API-KEY")
+    git_creds = extract_git_credentials_from_request(request)
     if "apiserver" in host:
         # MCP internal request - get stored user context
         user = mcp_context.get_most_recent_user()
         if user:
             logger.info(f"Using stored user context for MCP: {user.sub}")
+
+            if git_creds.get("token"):
+                user.git_token = git_creds.get("token")
+                user.git_provider = git_creds.get("provider")
             return user
+
         else:
             raise HTTPException(status_code=500, detail="No user context found")
     else:
         # Regular API request
-        return await get_authenticated_user(request, api_key_header)
+        user =  await get_authenticated_user(request, api_key_header)
+        if user:
+            if git_creds.get("token"):
+                user.git_token = git_creds.get("token")
+                user.git_provider = git_creds.get("provider")
+            return user
+        else:
+            raise HTTPException(status_code=500, detail="No user context found")
+
+
+def extract_git_credentials_from_request(request: Request) -> dict:
+    """
+    Extract Git credentials from server environment or headers
+    """
+    headers_lower = {k.lower(): v for k, v in request.headers.items()}
+
+    git_token = (
+            headers_lower.get("x-git-token") or
+            os.getenv("GIT_TOKEN") or
+            None
+    )
+
+    git_provider = (
+            headers_lower.get("x-git-provider") or
+            os.getenv("GIT_PROVIDER") or
+            None
+    )
+
+    # Default to github if token exists but provider doesn't
+    if git_token and not git_provider:
+        git_provider = "github"
+
+    return {
+        "token": git_token,
+        "provider": git_provider
+    }
+
+
+async def get_git_credentials(
+        user_claims: Annotated[UserClaims, Depends(get_mcp_aware_user_context)]
+) -> dict:
+    """
+    Dependency that provides Git credentials from user context
+
+    This can be injected into any endpoint that needs Git access
+    """
+
+
+    return {
+        "token": user_claims.git_token,
+        "provider": user_claims.git_provider or "github",
+        "user_id": user_claims.sub
+    }
