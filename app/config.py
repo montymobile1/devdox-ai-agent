@@ -47,7 +47,9 @@ class Settings(BaseSettings):
     TOGETHER_API_KEY: str = "test-clerk-key"
 
     COHERE_API_KEY:str = "test-cohere-key"
-
+    
+    MAX_QUESTIONS:int = 5
+    
     LOG_DIR:str = "/app/logs"
     BASE_DIR: ClassVar[str] = "app/repos"
 
