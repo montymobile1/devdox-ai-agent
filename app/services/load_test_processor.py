@@ -142,7 +142,7 @@ def  get_token(token_db:str,encryption_salt:str, auth_token:str|None) -> str:
     else:
         return FernetEncryptionHelper().decrypt_for_user(
                     token_db,
-                    salt_b64=FernetEncryptionHelper().encryption.decrypt(encryption_salt)
+                    salt_b64=FernetEncryptionHelper().decrypt(encryption_salt)
                 )
 def get_repo_info(git_provider, created_repo):
     if git_provider == "github":
@@ -349,7 +349,7 @@ class LoadTestProcessor(BaseProcessor):
 
 
             files = extract_files_for_commit(result, directory_test)
-
+            repo_full_name=""
             created_repo = fetcher.create_repository(token=decrypted_label_token, name=repo_name, description="", visibility=repo_info.visibility)
             if created_repo:
                 repo_full_name, default_branch = get_repo_info(git_provider, created_repo)
@@ -398,4 +398,4 @@ class LoadTestProcessor(BaseProcessor):
 
                     self.logger.error(f"Rollback failed delete repo: {rollback_error}")
 
-            self.logger.error(f"Repository creation failed: {e}")
+            self.logger.error(f"Repository creation failed: {e} {decrypted_label_token} {repo_full_name}")

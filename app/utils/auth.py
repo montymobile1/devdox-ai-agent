@@ -305,17 +305,9 @@ def extract_git_credentials_from_request(request: Request) -> dict:
     """
     headers_lower = {k.lower(): v for k, v in request.headers.items()}
 
-    git_token = (
-            headers_lower.get("x-git-token") or
-            os.getenv("GIT_TOKEN") or
-            None
-    )
+    git_token = headers_lower.get("x-git-token")
+    git_provider = headers_lower.get("x-git-provider")
 
-    git_provider = (
-            headers_lower.get("x-git-provider") or
-            os.getenv("GIT_PROVIDER") or
-            None
-    )
 
     # Default to github if token exists but provider doesn't
     if git_token and not git_provider:
