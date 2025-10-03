@@ -41,11 +41,11 @@ dependencies = [
    "email_validator==2.2.0",
     "tembo-pgmq-python==0.10.0",
     #models
-    "devdox-ai-models @ git+https://github.com/montymobile1/devdox-ai-models.git@DV-11-update-models-package",
+    "devdox-ai-models @ git+https://github.com/montymobile1/devdox-ai-models.git@fb22826",
 
     # Encryption package
     "devdox-ai-encryption @ git+https://github.com/montymobile1/devdox-ai-encryption.git@4eefae1",
-    "devdox-ai-git @ git+https://github.com/montymobile1/devdox-ai-git.git@DV-10-update-devdox-git-package",
+    "devdox-ai-git @ git+https://github.com/montymobile1/devdox-ai-git.git@e36ee1a",
     "devdox-ai-locust==0.1.2",
     "locust==2.0.0",
     "langchain-together==0.3.0",
