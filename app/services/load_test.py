@@ -151,8 +151,9 @@ class LoadTestService:
             )
 
             if not repo_info:
+
                 logger.warning(
-                    "Repository not found for user",
+                    f"Repository not found for user {user_claims.sub} and alias name {data.repo_alias_name}",
                     extra={
                         "user_id": user_claims.sub,
                         "repo_alias": data.repo_alias_name
@@ -196,12 +197,13 @@ class LoadTestService:
                 git_token = str(token_info.id),
                 git_provider = token_info.git_hosting,
                 auth_token = FernetEncryptionHelper().encrypt(
-                    user_claims.git_token ) if token_info.git_hosting == user_claims.git_provider else None,
+                    user_claims.git_token ) if token_info.git_hosting.lower() == user_claims.git_provider.lower() else None,
             )
             payload = {
                 "job_type": "load_locust",
                 "payload": job_payload.dict(),
             }
+
             job_id = await supabase_queue.enqueue(
                 "testing",
                 payload=payload,

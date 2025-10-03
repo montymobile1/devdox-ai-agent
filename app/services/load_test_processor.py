@@ -136,14 +136,15 @@ def extract_files_for_commit(result: List[dict], repo_root: Path) -> Dict[str, s
 
     return files_for_commit
 
-def  get_token(token_db:str,encryption_salt:str, auth_token:str|None) -> str:
-    if auth_token:
+def  get_token(token_db:str,encryption_salt:str, git_provider_label:str,git_provider:str, auth_token:str|None) -> str:
+    if auth_token and git_provider == git_provider_label:
         return  FernetEncryptionHelper().decrypt(auth_token)
     else:
         return FernetEncryptionHelper().decrypt_for_user(
                     token_db,
                     salt_b64=FernetEncryptionHelper().decrypt(encryption_salt)
                 )
+
 def get_repo_info(git_provider, created_repo):
     if git_provider == "github":
         repo_full_name = created_repo.full_name
@@ -345,7 +346,12 @@ class LoadTestProcessor(BaseProcessor):
 
 
         try:
-            decrypted_token = get_token(git_label.token_value, user_info.encryption_salt, auth_token)
+            decrypted_token = get_token(git_label.token_value,
+                                        user_info.encryption_salt,
+                                        git_label.git_hosting,
+                                        git_provider,
+                                        auth_token,
+                                        )
 
 
             files = extract_files_for_commit(result, directory_test)
