@@ -24,7 +24,7 @@ async def load_tests(
 
         user_claims: Annotated[UserClaims, Depends(get_mcp_aware_user_context)],
         request: LoadTestRequest,
-        service: Annotated[LoadTestService, Depends(LoadTestService.with_dependency)],
+        service: Annotated[LoadTestService, Depends(LoadTestService.with_dependency)]
 ) -> LoadTestResult:
     """
     Load tests using locust repo
