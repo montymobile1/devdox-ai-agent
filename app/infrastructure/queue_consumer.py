@@ -102,13 +102,6 @@ class QueueConsumer:
         try:
 
             result = await self.queue.dequeue(queue_name, job_types=job_types)
-            if result:
-                await self._process_job(queue_name, result)
-            else:
-                # No jobs available, wait before checking again
-                await asyncio.sleep(settings.QUEUE_POLLING_INTERVAL_SECONDS or 5)
-                return None
-
             return result
 
         except Exception as e:
