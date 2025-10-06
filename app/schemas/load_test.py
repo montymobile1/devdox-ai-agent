@@ -4,7 +4,23 @@ import re
 from enum import Enum
 from datetime import datetime, timezone
 from dataclasses import dataclass
+from uuid import uuid4
 from urllib.parse import urlparse
+
+
+class LoadTestConfig:
+    DEFAULT_TEST_TYPE = "locust"
+    DEFAULT_BRANCH_NAME = "feature/load-tests"
+    DEFAULT_COMMIT_MESSAGE_TEMPLATE = "feat: Add load tests for {repo_name}"
+    PROCESSING_TIMEOUT_SECONDS = 300
+
+    @staticmethod
+    def get_branch_name(repo_name: str) -> str:
+        return f"{LoadTestConfig.DEFAULT_BRANCH_NAME}-{repo_name}"
+
+    @staticmethod
+    def get_commit_message(repo_name: str) -> str:
+        return LoadTestConfig.DEFAULT_COMMIT_MESSAGE_TEMPLATE.format(repo_name=repo_name)
 
 class LoadTestRequest(BaseModel):
     """Request wrapper for Load tests"""
@@ -259,6 +275,66 @@ class LoadTestError(Exception):
         self.details = details or {}
         super().__init__(self.message)
 
+
+class RepositoryValidationError(LoadTestError):
+    """Repository, user, or token validation failed"""
+
+    def __init__(
+            self,
+            message: str,
+            error_code: str = "VALIDATION_ERROR",
+            details: Optional[Dict[str, Any]] = None
+    ):
+        super().__init__(message, error_code, details)
+
+
+class GitOperationError(LoadTestError):
+    """Git operations (create repo, branch, commit) failed"""
+
+    def __init__(
+            self,
+            message: str,
+            error_code: str = "GIT_OPERATION_ERROR",
+            details: Optional[Dict[str, Any]] = None
+    ):
+        super().__init__(message, error_code, details)
+
+
+class TokenDecryptionError(LoadTestError):
+    """Token decryption failed"""
+
+    def __init__(
+            self,
+            message: str,
+            error_code: str = "TOKEN_DECRYPTION_ERROR",
+            details: Optional[Dict[str, Any]] = None
+    ):
+        super().__init__(message, error_code, details)
+
+
+class TestGenerationError(LoadTestError):
+    """Test file generation failed"""
+
+    def __init__(
+            self,
+            message: str,
+            error_code: str = "TEST_GENERATION_ERROR",
+            details: Optional[Dict[str, Any]] = None
+    ):
+        super().__init__(message, error_code, details)
+
+
+class LoadLocustPayload(BaseModel):
+    repo_id: str
+    token_id: str
+    config: dict = Field(default_factory=dict)
+    data: dict
+    user_id: str
+    priority: int = 1
+    git_token: str
+    git_provider: str
+    auth_token: Optional[str] = None
+    context_id: str = Field(default_factory=lambda: uuid4().hex)
 
 class LoadTestResult(BaseModel):
     """Structured result for load test operations"""

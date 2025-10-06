@@ -376,5 +376,5 @@ class SupabaseQueue:
     async def close(self):
         """Close the queue connection"""
         if self._initialized and self.queue:
-            await self.queue.close()
+            await self.queue.pool.close()
             self._initialized = False
