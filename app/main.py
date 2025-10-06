@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI):
 
     worker_service = QueueConsumer(
         queue=supabase_queue,
-        workers=getattr(settings, 'CONSUMER_WORKERS', 4),
+        workers=getattr(settings, 'CONSUMER_WORKERS', 2),
         poll_interval=getattr(settings, 'CONSUMER_POLL_INTERVAL', 7.0),
         max_processing_time=getattr(settings, 'CONSUMER_MAX_PROCESSING_TIME', 1800)
     )
@@ -115,7 +115,7 @@ mcp = FastApiMCP(app,
                  auth_config=AuthConfig(
                      dependencies=[Depends(mcp_auth_interceptor)]
                  ),
-                 include_operations = ["analyze_code", "load_tests","healthcheck"]
+                 include_operations = ["analyze_code", "load_tests"]
                  )
 mcp.mount()
 

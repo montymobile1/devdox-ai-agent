@@ -105,7 +105,7 @@ def get_database_config() -> Dict[str, Any]:
         "min_size": settings.DB_MIN_CONNECTIONS,
         "max_size": settings.DB_MAX_CONNECTIONS,
         "ssl": "require",
-        "statement_cache_size":100,
+        "statement_cache_size":0,
         "server_settings": {
             "search_path": settings.DB_SCHEMA,
             "statement_timeout": str(settings.DB_STATEMENT_TIMEOUT),  # Prevent runaway queries
