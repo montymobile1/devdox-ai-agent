@@ -50,7 +50,7 @@ cd devdox-ai-agent
 poetry install
 
 # Or using pip
-pip install -r requirements.txt
+pip install .
 
 # Set up environment variables
 cp .env.example .env
