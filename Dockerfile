@@ -34,4 +34,4 @@ RUN mkdir -p /app/logs && \
 USER user
 
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9002", "--reload"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "9002","--workers", "4"]

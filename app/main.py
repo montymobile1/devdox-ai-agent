@@ -5,6 +5,7 @@ FastAPI application entry point for agent MCP server
 from contextlib import asynccontextmanager
 import uvicorn
 from tortoise import Tortoise
+from tortoise import connections
 import asyncio
 from fastapi import FastAPI, Depends
 from fastapi_mcp import FastApiMCP, AuthConfig
@@ -21,37 +22,48 @@ logger = setup_logging()
 
 
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan with proper async signal handling"""
     global worker_service
 
     # Startup
-    logger.info(f"Starting DevDox AI Context Worker Service v{settings.VERSION}")
+    logger.info(f"Starting DevDox AI Agent Worker Service v{settings.VERSION}")
 
     try:
-        # Initialize database
-        if TORTOISE_ORM:
-            await Tortoise.init(config=TORTOISE_ORM)
-            logger.info("Database initialized")
+            logger.info(f"Database connection ")
 
-        worker_service = QueueConsumer(
-            queue=supabase_queue,
-            workers=getattr(settings, 'CONSUMER_WORKERS', 4),
-            poll_interval=getattr(settings, 'CONSUMER_POLL_INTERVAL', 2.0),
-            max_processing_time=getattr(settings, 'CONSUMER_MAX_PROCESSING_TIME', 1800)
-        )
+            # Initialize database
+            if TORTOISE_ORM:
+                await Tortoise.init(config=TORTOISE_ORM)
+                logger.info("Database initialized")
+                conn = Tortoise.get_connection("default")
+                # Test query
+                result = await conn.execute_query("SELECT 1 as test")
+                logger.info(f"✅ Database connection verified: {result}")
 
-        _ = asyncio.create_task(worker_service.start())
-        logger.info("Consumer started as background task")
-        await asyncio.sleep(1)
-        logger.info("Application startup complete")
+
+            conn = connections.get("default")
+            await conn.execute_query("SELECT 1")
+
+            logger.info("Database initialized and connection verified")
+            logger.info("Tortoise._inited: " + str(Tortoise._inited))
 
     except Exception as e:
-        logger.error(f"Failed to start application: {e}", exc_info=True)
-        raise
+            logger.error(f"Database connection  failed: {e}")
 
+
+    worker_service = QueueConsumer(
+        queue=supabase_queue,
+        workers=getattr(settings, 'CONSUMER_WORKERS', 4),
+        poll_interval=getattr(settings, 'CONSUMER_POLL_INTERVAL', 7.0),
+        max_processing_time=getattr(settings, 'CONSUMER_MAX_PROCESSING_TIME', 1800)
+    )
+
+    _ = asyncio.create_task(worker_service.start())
+    logger.info("Consumer started as background task")
+    await asyncio.sleep(1)
+    logger.info("Application startup complete")
     yield
 
     # Shutdown
@@ -103,7 +115,7 @@ mcp = FastApiMCP(app,
                  auth_config=AuthConfig(
                      dependencies=[Depends(mcp_auth_interceptor)]
                  ),
-                 include_operations = ["analyze_code", "load_tests"]
+                 include_operations = ["analyze_code", "load_tests","healthcheck"]
                  )
 mcp.mount()
 
