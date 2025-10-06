@@ -41,7 +41,9 @@ class Settings(BaseSettings):
 
     DB_MIN_CONNECTIONS: int = 5
     DB_MAX_CONNECTIONS: int = 25
-
+    
+    VECTOR_SIZE:int = 768
+    
     QUEUE_POLLING_INTERVAL_SECONDS: int = 10
 
     TOGETHER_API_KEY: str = "test-clerk-key"

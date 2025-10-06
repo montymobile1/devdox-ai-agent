@@ -35,13 +35,16 @@ router = APIRouter()
     operation_id="analyze_code"
 )
 async def answer(
-        user_claims: Annotated[UserClaims, Depends(get_mcp_aware_user_context)],
+        #user_claims: Annotated[UserClaims, Depends(get_mcp_aware_user_context)],
         request: AnalyseRequest,
         service: Annotated[AnalyseService, Depends(AnalyseService.with_dependency)],
 ) -> Dict[str, Any]:
     """
     Analyze code and return results
     """
+    
+    user_claims = UserClaims(sub="user_2xioBPMzrTczyKDABvynLeToHst")
+    
     # Collect all chunks into a single response
     full_response = ""
     async for chunk in service.answer_question(

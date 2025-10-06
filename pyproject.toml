@@ -41,7 +41,7 @@ dependencies = [
    "email_validator==2.2.0",
     "tembo-pgmq-python==0.10.0",
     #models
-    "devdox-ai-models @ git+https://github.com/montymobile1/devdox-ai-models.git@fb22826",
+    "devdox-ai-models @ git+https://github.com/montymobile1/devdox-ai-models.git@DEV-23-implement-fixes-and-changes-to-current-existing-code-in-devdox-ai-model-for-devdox-ai-agent-to-achieve-working-state",
 
     # Encryption package
     "devdox-ai-encryption @ git+https://github.com/montymobile1/devdox-ai-encryption.git@4eefae1",
