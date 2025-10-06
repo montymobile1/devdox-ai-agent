@@ -50,7 +50,7 @@ from typing import Dict, List, Tuple, Optional
 
 from models_src.dto.repo import RepoResponseDTO
 from models_src.repositories.repo import TortoiseRepoStore
-from together import Together
+from together import AsyncTogether, Together
 
 from .qna_models import QAPair, ProjectQnAPackage
 from .qna_utils import _to_bool, NO_ANSWER, snippet_calculator
@@ -287,8 +287,8 @@ def _chunk(lst: List[Tuple[str, str]], n: int) -> List[List[Tuple[str, str]]]:
 	
 	return [lst[i:i+n] for i in range(0, len(lst), n)]
 
-def _ask_batch(
-		together_client:Together,
+async def _ask_batch(
+		together_client:AsyncTogether,
 		model: str,
 		analysis_text: str,
 		qs: List[Tuple[str, str]],
@@ -320,7 +320,7 @@ def _ask_batch(
 	raw_audit = ""         # what we’ll append to raw_responses for observability
 	
 	try:
-		resp = together_client.chat.completions.create(
+		resp = await together_client.chat.completions.create(
 			model=model,
 			messages=[{"role": "user", "content": prompt}],
 			max_tokens=max_tokens,
@@ -389,7 +389,7 @@ async def generate_project_qna(
 		project_name: str,
 		repo_url: str,
 		repo_system_reference:str,
-		together_client:Together,
+		together_client:AsyncTogether,
 		questions: Optional[List[Tuple[str, str]]] | List[str] = None,
 		model: str = "meta-llama/Llama-3.3-70B-Instruct-Turbo",
 		temperature: float = 0.2,
@@ -466,7 +466,7 @@ async def generate_project_qna(
 	
 	for i, chunk_qs in enumerate(_chunk(questions, batch_size), start=1):
 		try:
-			chunk_pairs, prompt, audit = _ask_batch(
+			chunk_pairs, prompt, audit = await _ask_batch(
 				together_client, model, analysis_text, chunk_qs,
 				temperature=temperature, max_tokens=max_tokens
 			)
