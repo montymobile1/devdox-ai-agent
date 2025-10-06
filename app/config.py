@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     SUPABASE_USER: str = "postgres"
     SUPABASE_PASSWORD: str = "test"
     SUPABASE_PORT: int = 5432
+    SUPABASE_QUEUE_PORT:int = 5432
     SUPABASE_DB_NAME: str = "postgres"
 
     DB_MIN_CONNECTIONS: int = 5
@@ -79,7 +80,7 @@ settings = Settings()
 # Initialize Supabase queue
 supabase_queue = SupabaseQueue(
     host=settings.SUPABASE_HOST,
-    port=settings.SUPABASE_PORT,
+    port=settings.SUPABASE_QUEUE_PORT,
     user=settings.SUPABASE_USER,
     password=settings.SUPABASE_PASSWORD,
     db_name=settings.SUPABASE_DB_NAME,
