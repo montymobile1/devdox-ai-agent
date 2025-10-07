@@ -1,0 +1,45 @@
+Subject: Failure — {{ job_type }}
+
+❌ Failure — {{ job_type }}
+
+Facts
+-----
+Repository: {% if repository_html_url %}{{ repository_html_url }}{% else %}—{% endif %} • repo_id {{ repo_id }}
+Branch: {% if repository_branch %}{{ repository_branch }}{% else %}—{% endif %}
+User: {% if user_email %}{{ user_email }}{% else %}—{% endif %} • user_id {{ user_id }}
+Context ID: {% if job_context_id %}{{ job_context_id }}{% else %}—{% endif %}
+
+Timing
+------
+Queued at:   {% if job_queued_at %}{{ job_queued_at }}{% else %}—{% endif %}
+Started at:  {% if job_started_at %}{{ job_started_at }}{% else %}—{% endif %}
+Finished at: {% if job_finished_at %}{{ job_finished_at }}{% else %}—{% endif %}
+Settled at:  {% if job_settled_at %}{{ job_settled_at }}{% else %}—{% endif %} (includes post-operation)
+Run (core):  {% if run_ms %}{{ run_ms }} ms{% else %}—{% endif %}
+Total:       {% if total_ms %}{{ total_ms }} ms{% else %}—{% endif %}
+
+Stack trace{% if error_stacktrace_truncated %} [TRUNCATED]{% endif %}
+-----------
+{% if error_chain and error_chain|length > 0 %}
+{% if error_summary %}Summary: {{ error_summary }}
+{% endif %}
+{% set outer = error_chain|first %}
+{% set inner = error_chain|last %}
+Outermost: {{ outer.func }} [{{ outer.type }}]{% if outer.file %} ({{ outer.file }}:{{ outer.line }}){% endif %}
+Innermost: {{ inner.func }} [{{ inner.type }}]{% if inner.file %} ({{ inner.file }}:{{ inner.line }}){% endif %}
+
+Detail
+------
+{% for n in error_chain -%}
+{{ ('  ' * n.depth) ~ '- ' ~ n.func ~ ' [' ~ n.type ~ ']' }}{% if n.file %} ({{ n.file }}:{{ n.line }}){% endif %}
+{% if n.msg %}{{ ('  ' * n.depth) ~ '  Message: ' ~ n.msg }}{% endif %}
+
+{%- endfor %}
+{% elif error_stacktrace %}
+{{ error_stacktrace }}
+{% else %}
+— No stacktrace —
+{% endif %}
+
+—
+DevDox

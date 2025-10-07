@@ -6,12 +6,163 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, ClassVar
 
-from pydantic_settings import BaseSettings
+from pydantic import EmailStr, Field, field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.infrastructure.supabase_queue import SupabaseQueue
 
 class GitHosting(str, Enum):
     GITLAB = "gitlab"
     GITHUB = "github"
+
+
+class MailSettings(BaseSettings):
+    
+    MAIL_SEND_TIMEOUT_MIN: ClassVar[int] = 20
+    
+    
+    MAIL_USERNAME: str = Field(
+        ...,
+        description="SMTP username. Some providers require it separately, others just use MAIL_FROM.",
+    )
+    MAIL_PASSWORD: str = Field(
+        ...,
+        description="Password or app-specific key for authenticating to the SMTP server.",
+    )
+    MAIL_FROM: EmailStr = Field(
+        ...,
+        description="Default sender email address (appears in the 'From' header).",
+    )
+    MAIL_FROM_NAME: str | None = Field(
+        default=None,
+        description="Friendly name for the sender (appears alongside MAIL_FROM).",
+    )
+    MAIL_PORT: int = Field(
+        default=587,
+        description="Port for SMTP server. Usually 587 for STARTTLS, 465 for SSL/TLS, 25 as legacy.",
+    )
+    MAIL_SERVER: str = Field(
+        ...,
+        description="SMTP server hostname or IP address (e.g., smtp.gmail.com).",
+    )
+    MAIL_STARTTLS: bool = Field(
+        default=True,
+        description="Use STARTTLS (opportunistic TLS upgrade). Set false if server doesn’t support it.",
+    )
+    MAIL_SSL_TLS: bool = Field(
+        default=False,
+        description="Use direct SSL/TLS connection (usually on port 465).",
+    )
+    MAIL_USE_CREDENTIALS: bool = Field(
+        default=True,
+        description="Whether to authenticate with username/password. Set False for open relays (rare).",
+    )
+    MAIL_VALIDATE_CERTS: bool = Field(
+        default=True,
+        description="Validate SMTP server's TLS/SSL certificate. Set False only for self-signed certs.",
+    )
+    
+    MAIL_SUPPRESS_SEND: bool = Field(
+        default=False,
+        description="If True, suppresses actual sending (emails are 'mocked'). Useful in testing.",
+    )
+    MAIL_DEBUG: int = Field(
+        default=0,
+        description="Debug output level for SMTP interactions. 0 = silent, 1+ = verbose.",
+    )
+    
+    MAIL_AUDIT_RECIPIENTS: List[EmailStr] = Field(
+        default_factory=list,
+        description=(
+            "Addresses to receive audit/ops/compliance notifications (can be internal or external). "
+        ),
+    )
+    
+    MAIL_SEND_TIMEOUT: int | None = Field(
+        default=60,
+        ge=MAIL_SEND_TIMEOUT_MIN,
+        description=(
+            "Max seconds to wait for the SMTP send to complete. If omitted, defaults to 60s. "
+            "Set to None to disable the timeout entirely (use with caution). "
+            "Values below 20s are rejected to avoid flaky timeouts under normal network operation."
+        ),
+    )
+    
+    MAIL_TEMPLATES_PARENT_DIR: Path | None = Field(
+        default=None,
+        description=(
+            "Absolute or relative path to a *parent* directory that contains an 'email/' "
+            "subfolder with Jinja templates. The effective template folder passed to the mail "
+            "engine is <MAIL_TEMPLATES_PARENT_DIR>/email. If the value is empty, 'none', or "
+            "'null', template rendering is disabled and only raw bodies may be used. The path "
+            "is expanded (supports ~) and resolved at load time; when set, the '<parent>/email' "
+            "directory must exist or settings validation will fail."
+        )
+    )
+    
+    # ---- Derived convenience properties ----
+    
+    @property
+    def templates_enabled(self) -> bool:
+        return self.MAIL_TEMPLATES_PARENT_DIR is not None
+    
+    @property
+    def templates_dir(self) -> Path | None:
+        
+        if not self.templates_enabled:
+            return None
+        
+        return (self.MAIL_TEMPLATES_PARENT_DIR / "email").expanduser().resolve()
+    
+    # ---- Normalizers & validation ----
+    
+    @field_validator("MAIL_SEND_TIMEOUT", mode="before")
+    @classmethod
+    def _noneify_timeout(cls, v:str) -> str | None:
+        # Allow '', 'none', 'null' (case-insensitive) to disable the timeout via env
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip().lower()
+            if s in {"", "none", "null"}:
+                return None
+        return v
+    
+    @field_validator("MAIL_TEMPLATES_PARENT_DIR", mode="before")
+    @classmethod
+    def _noneify_mail_template_parent_dir(cls, v:str) -> str | None:
+        # Treat "", "none", "null" as disabling templates
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip()
+            if not s or s.lower() in {"none", "null"}:
+                return None
+        return v
+    
+    @field_validator("MAIL_TEMPLATES_PARENT_DIR", mode="after")
+    @classmethod
+    def _normalize_parent(cls, v: Path | None) -> Path | None:
+        return v.expanduser().resolve() if isinstance(v, Path) else v
+    
+    @model_validator(mode="after")
+    def _validate(self) -> "MailSettings":
+        # TLS mode sanity
+        if self.MAIL_STARTTLS and self.MAIL_SSL_TLS:
+            raise ValueError("Set only one of MAIL_STARTTLS or MAIL_SSL_TLS, not both.")
+        
+        # If templates are enabled, require <parent>/email to exist
+        if self.templates_enabled:
+            td = self.templates_dir
+            if not (td and td.is_dir()):
+                raise ValueError(f"Templates directory does not exist: {td}")
+        return self
+    
+    # ---- Configuration manager ----
+    model_config = SettingsConfigDict(
+        env_file=str(Path(__file__).resolve().parent / "instance" / ".env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 class Settings(BaseSettings):
@@ -77,7 +228,10 @@ class Settings(BaseSettings):
 
     # Version
     VERSION: str = "0.1.1"
-
+    
+    
+    mail: MailSettings = Field(default_factory=MailSettings)
+    
     class Config:
         """Pydantic config class."""
         env_file = str(Path(__file__).resolve().parent / "instance" / ".env")
