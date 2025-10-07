@@ -92,7 +92,6 @@ settings = Settings()
 # Initialize Supabase queue
 supabase_queue = SupabaseQueue(
     host=settings.SUPABASE_HOST,
-    #port=settings.SUPABASE_PORT,
     port=5432,
     user=settings.SUPABASE_USER,
     password=settings.SUPABASE_PASSWORD,

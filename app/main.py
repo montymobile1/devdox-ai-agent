@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
     logger.info(f"Starting DevDox AI Agent Worker Service v{settings.VERSION}")
 
     try:
-            logger.info(f"Database connection ")
+            logger.info("Database connection")
 
             # Initialize database
             if TORTOISE_ORM:
