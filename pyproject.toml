@@ -18,7 +18,7 @@ dependencies = [
    "starlette==0.46.2",
    "fastapi-mcp==0.3.6",
    "uvicorn==0.34.2",
-   "uvloop==0.21.0",
+   "uvloop==0.21.0; sys_platform != 'win32'",
    "markdown-it-py==3.0.0",
    "mdurl==0.1.2",
    "packaging>=23.2,<25",
@@ -41,7 +41,7 @@ dependencies = [
    "email_validator==2.2.0",
     "tembo-pgmq-python==0.10.0",
     #models
-    "devdox-ai-models @ git+https://github.com/montymobile1/devdox-ai-models.git@93fa32a",
+    "devdox-ai-models @ git+https://github.com/montymobile1/devdox-ai-models.git@a34f8d1",
 
     # Encryption package
     "devdox-ai-encryption @ git+https://github.com/montymobile1/devdox-ai-encryption.git@4eefae1",
