@@ -1,27 +1,210 @@
 import logging
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from tembo_pgmq_python.async_queue import PGMQueue
 from tembo_pgmq_python.messages import Message
+
+from app.infrastructure.queue_job_tracker.job_trace_metadata import JobTraceMetaData
+from app.infrastructure.queue_job_tracker.job_tracker import JobTracker
+
 logger = logging.getLogger(__name__)
 
+class SupabaseQueueFailHandler:
+    
+    def __init__(
+            self,
+            table_name,
+            max_retries,
+            queue
+    ):
+        self.table_name=table_name
+        self.max_retries = max_retries
+        self.queue=queue
+    
+    async def _fail_job_internal(
+            self,
+            job_data: Dict[str, Any],
+            error: BaseException,
+            job_tracker_instance: Optional[JobTracker] = None,
+            job_tracer: Optional[JobTraceMetaData] = None,
+            error_trace: Optional[str] = None,
+            retry: bool = True,
+    ) -> Tuple[bool, bool]:
+        """
+        Mark a job as failed.
 
-class SupabaseQueue:
+        Args:
+            job_data: Job data returned from dequeue
+            job_tracer: An optional job tracer for tracing the state of the job
+            error: Error message
+            job_tracker_instance: Optional job tracker to handle claim and tracking
+            error_trace: Full error traceback
+            retry: Whether to retry the job if attempts remain
+
+        Returns:
+            (perma_failure, handled_ok)
+            - perma_failure: True if the job is now permanently failed/archived.
+            - handled_ok:     True if we successfully requeued OR archived; False if we couldn’t act.
+        """
+        
+        queue_name = job_data.get("queue_name", self.table_name)
+        msg_id = job_data.get("pgmq_msg_id")
+        attempts = int(job_data.get("attempts", 1))
+        max_attempts = int(job_data.get("max_attempts", self.max_retries))
+        
+        # Guard: without msg_id we can't delete/archive; log and record
+        if not msg_id:
+            return self._handle_missing_msg_id(job_data, error, job_tracer)
+        
+        # Retry path (early return)
+        if self._should_retry(retry, attempts, max_attempts):
+            return await self._retry_job(
+                queue_name=queue_name,
+                msg_id=msg_id,
+                job_data=job_data,
+                attempts=attempts,
+                max_attempts=max_attempts,
+                error=error,
+                error_trace=error_trace,
+                job_tracker_instance=job_tracker_instance,
+            )
+        
+        # Permanent failure path
+        return await self._archive_permanently(
+            queue_name=queue_name,
+            msg_id=msg_id,
+            job_data=job_data,
+            attempts=attempts,
+            error=error,
+            job_tracker_instance=job_tracker_instance,
+            job_tracer=job_tracer,
+        )
+    
+    # HELPERS
+    
+    def _should_retry(self, retry_flag: bool, attempts: int, max_attempts: int) -> bool:
+        return bool(retry_flag) and attempts < max_attempts
+    
+    def _retry_delay_secs(self, attempts: int) -> int:
+        # Exponential backoff: 10, 20, 40, ... capped at 300s (5m)
+        return min(300, (2 ** max(0, attempts - 1)) * 10)
+    
+    def _build_retry_payload(
+            self,
+            job_data: Dict[str, Any],
+            *,
+            attempts: int,
+            error: BaseException,
+            error_trace: Optional[str],
+    ) -> Dict[str, Any]:
+        # Start from existing job_data to retain original fields/context
+        retry_job_data = dict(job_data)
+        retry_job_data.update(
+            {
+                "attempts": attempts + 1,
+                "retry_count": attempts,              # explicit retry counter (mirrors attempts), retries done
+                "error_message": str(error),
+                "last_error_trace": error_trace,
+            }
+        )
+        # Strip queue-generated IDs; we’re re-inserting a fresh message
+        retry_job_data.pop("pgmq_msg_id", None)
+        retry_job_data.pop("id", None)
+        return retry_job_data
+    
+    async def _retry_job(
+            self,
+            queue_name: str,
+            msg_id: Any,
+            job_data: Dict[str, Any],
+            attempts: int,
+            max_attempts: int,
+            error: BaseException,
+            error_trace: Optional[str],
+            job_tracker_instance: Optional[JobTracker],
+    ) -> Tuple[bool, bool]:
+        delay = self._retry_delay_secs(attempts)
+        retry_payload = self._build_retry_payload(
+            job_data, attempts=attempts, error=error, error_trace=error_trace
+        )
+        
+        # Remove current message then re-send with delay
+        await self.queue.delete(queue_name, msg_id)
+        new_msg_id = await self.queue.send(queue=queue_name, message=retry_payload, delay=delay)
+        
+        logger.info(
+            "Job %s scheduled for retry %d/%d in %ds",
+            job_data.get("id"),
+            attempts,
+            max_attempts,
+            delay,
+        )
+        
+        if job_tracker_instance:
+            try:
+                await job_tracker_instance.retry(message_id=str(new_msg_id))
+            except Exception:
+                logger.exception("Job re-queued, but JobTracker.retry() failed; continuing.")
+        
+        return (False, True)  # not permanent, handled OK
+    
+    async def _archive_permanently(
+            self,
+            *,
+            queue_name: str,
+            msg_id: Any,
+            job_data: Dict[str, Any],
+            attempts: int,
+            error: BaseException,
+            job_tracker_instance: Optional[JobTracker],
+            job_tracer: Optional[JobTraceMetaData],
+    ) -> Tuple[bool, bool]:
+        # Try to archive the failed message
+        success = await self.queue.archive(queue_name, msg_id)
+        
+        if job_tracker_instance:
+            try:
+                await job_tracker_instance.fail(message_id=str(msg_id))
+            except Exception:
+                logger.exception("JobTracker.fail() threw; continuing.")
+        
+        if success:
+            log_summary = f"Job {job_data.get('id')} permanently failed after {attempts} attempts"
+            handled_ok = True
+        else:
+            log_summary = f"Failed to archive permanently failed job {job_data.get('id')}"
+            handled_ok = False
+        
+        logger.error(log_summary)
+        
+        if job_tracer:
+            # Attach context to tracer; include original exception
+            job_tracer.record_error(summary=log_summary, exc=error)
+        
+        return (True, handled_ok)  # permanent, maybe handled_ok False if archive failed
+    
+    def _handle_missing_msg_id(
+            self,
+            job_data: Dict[str, Any],
+            error: BaseException,
+            job_tracer: Optional[JobTraceMetaData],
+    ) -> Tuple[bool, bool]:
+        logger.error("No pgmq_msg_id found in job data (job id: %s); cannot retry/archive.", job_data.get("id"))
+        if job_tracer:
+            job_tracer.record_error(summary="Missing pgmq_msg_id", exc=error)
+        # Treat as permanently failed but unhandled (we couldn't mutate queue state)
+        return (True, False)
+
+
+class SupabaseQueue(SupabaseQueueFailHandler):
     """
     Queue implementation using PGMQueue as the backend storage.
     Uses PostgreSQL tables to implement a reliable job queue system.
     """
 
-    def __init__(
-        self,
-        host: str,
-        port: str,
-        user: str,
-        password: str,
-        db_name: str,
-        table_name: str = "processing_job",
-    ):
+    def __init__(self, host: str, port: str, user: str, password: str, db_name: str,
+                 table_name: str = "processing_job"):
         """
         Initialize PGMQueue client
 
@@ -33,6 +216,7 @@ class SupabaseQueue:
             db_name: PostgreSQL database name
             table_name: Name of the queue to use for job storage
         """
+        
         self.queue = PGMQueue(
             host=host,
             port=port,
@@ -44,6 +228,12 @@ class SupabaseQueue:
         self.max_retries = 3
         self.retry_delay = 5  # seconds
         self._initialized = False
+        
+        super().__init__(
+            table_name=self.table_name,
+            max_retries=self.max_retries,
+            queue=self.queue
+        )
 
     async def _ensure_initialized(self):
         """Ensure the queue is initialized"""
@@ -120,41 +310,6 @@ class SupabaseQueue:
                 extra={"queue_name": queue_name, "job_type": job_type, "error": str(e)},
             )
             raise
-
-    async def complete_job(
-        self, job_data: Dict[str, Any], result: Dict[str, Any] = None
-    ) -> bool:
-        """
-        Mark a job as completed
-
-        Args:
-            job_data: Job data returned from dequeue (contains pgmq_msg_id and queue_name)
-            result: Optional result data to store
-
-        Returns:
-            bool: True if job was successfully marked as completed
-        """
-        try:
-            await self._ensure_initialized()
-            msg_id = job_data.get("pgmq_msg_id")
-            queue_name = job_data.get("queue_name", self.table_name)
-
-            if not msg_id:
-                logger.error("No pgmq_msg_id found in job data")
-                return False
-
-            # Delete the message from the queue (marks as completed)
-            success = await self.queue.delete(queue_name, msg_id)
-            if success:
-                logger.info(f"Job {job_data.get('id')} marked as completed")
-                return True
-            else:
-                logger.error(f"Failed to mark job {job_data.get('id')} as completed")
-                return False
-
-        except Exception as e:
-            logger.error(f"Failed to complete job {job_data.get('id')}: {str(e)}")
-            return False
 
     async def get_queue_stats(self, queue_name: str = None) -> Dict[str, int]:
         """
@@ -298,10 +453,10 @@ class SupabaseQueue:
             queue_name: str
     ) -> bool:
         """Handle jobs that exceeded max attempts. Returns True if job was archived"""
-        attempts = message_data.get("attempts", 0)
-        max_attempts = message_data.get("max_attempts", self.max_retries)
-
-        if attempts >= max_attempts:
+        attempts = int(message_data.get("attempts", 1))
+        max_attempts = int(message_data.get("max_attempts", self.max_retries))
+        
+        if attempts > max_attempts:
             await self.queue.archive(queue_name, msg_id)
             return True
         return False
@@ -341,7 +496,7 @@ class SupabaseQueue:
 
         payload = self._parse_json_field(message_data.get("payload"))
 
-        attempts = message_data.get("attempts", 0)
+        attempts = int(message_data.get("attempts", 1))  # 1-based: first attempt if missing
 
         job_data = {
             "id": str(message.msg_id),
@@ -350,8 +505,9 @@ class SupabaseQueue:
             "payload": payload,
 
             "priority": message_data.get("priority", 1),
-            "attempts": attempts + 1,
-            "max_attempts": message_data.get("max_attempts", self.max_retries),
+            "attempts": attempts,                          # current attempt number
+            "retries_done": max(0, attempts - 1),
+            "max_attempts": int(message_data.get("max_attempts", self.max_retries)),
             "user_id": message_data.get("user_id"),
             "scheduled_at": message_data.get("scheduled_at"),
             "started_at": datetime.now(timezone.utc).isoformat(),
@@ -371,8 +527,61 @@ class SupabaseQueue:
 
         return job_data
 
+    async def complete_job(
+        self, job_data: Dict[str, Any], result: Dict[str, Any] = None
+    ) -> bool:
+        """
+        Mark a job as completed
 
+        Args:
+            job_data: Job data returned from dequeue (contains pgmq_msg_id and queue_name)
+            result: Optional result data to store
 
+        Returns:
+            bool: True if job was successfully marked as completed
+        """
+        try:
+            await self._ensure_initialized()
+            msg_id = job_data.get("pgmq_msg_id")
+            queue_name = job_data.get("queue_name", self.table_name)
+
+            if not msg_id:
+                logger.error("No pgmq_msg_id found in job data")
+                return False
+
+            # Delete the message from the queue (marks as completed)
+            success = await self.queue.delete(queue_name, msg_id)
+            if success:
+                logger.info(f"Job {job_data.get('id')} marked as completed")
+                return True
+            else:
+                logger.error(f"Failed to mark job {job_data.get('id')} as completed")
+                return False
+
+        except Exception as e:
+            logger.error(f"Failed to complete job {job_data.get('id')}: {str(e)}")
+            return False
+    
+    async def fail_job(
+            self,
+            job_data: Dict[str, Any],
+            error: BaseException,
+            job_tracker_instance: Optional[JobTracker] = None,
+            job_tracer: Optional[JobTraceMetaData] = None,
+            error_trace: Optional[str] = None,
+            retry: bool = True,
+    ) -> Tuple[bool, bool]:
+        await self._ensure_initialized()
+        return await self._fail_job_internal(
+            job_data=job_data,
+            error=error,
+            job_tracker_instance=job_tracker_instance,
+            job_tracer=job_tracer,
+            error_trace=error_trace,
+            retry=retry,
+        )
+        
+        
     async def close(self):
         """Close the queue connection"""
         if self._initialized and self.queue:

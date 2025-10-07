@@ -1,4 +1,3 @@
-# app/processors/load_test_processor.py
 """
 Load test processor for handling load testing jobs
 """
@@ -7,9 +6,11 @@ import asyncio
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import logging
 from app.infrastructure.base_processor import BaseProcessor
+from app.infrastructure.queue_job_tracker.job_trace_metadata import JobTraceMetaData
+from app.infrastructure.queue_job_tracker.job_tracker import JobLevels, JobTracker
 from app.schemas.load_test import LoadTestRequest, LoadTestConfig, RepositoryValidationError
 from app.services.api_test_generator import APITestGenerator
 from app.utils.encryption import FernetEncryptionHelper
@@ -159,8 +160,12 @@ def get_repo_info(git_provider, created_repo):
 class LoadTestProcessor(BaseProcessor):
     """Processor for load testing jobs"""
 
-
-    async def process(self, job_data: Dict[str, Any]) -> Dict[str, Any]:
+    async def process(
+        self,
+        job_data: Dict[str, Any],
+        trace: JobTraceMetaData | None = None,
+        tracker: JobTracker | None = None,
+    ) -> Dict[str, Any]:
         """
         Process load test job
 
@@ -194,17 +199,39 @@ class LoadTestProcessor(BaseProcessor):
 
 
         self.logger.info(f"Processing load test for context: {context_id}")
+        start_time = datetime.now(UTC)
 
-        start_time = datetime.now(timezone.utc)
+        # hint tracker we're entering logical analysis phase
+        if tracker:
+            try:
+                await tracker.update_step(JobLevels.LOAD_TESTS)
+            except Exception:
+                logger.warning("tracker.update_step(LOAD_TESTS) failed", exc_info=True)
 
         try:
             # Simulate load test execution (replace with actual logic)
-            result, directory_test = await self._execute_load_test(context_id,job_payload)
+            result, directory_test = await self._execute_load_test(
+                context_id,
+                job_payload,
+                trace=trace,
+                tracker=tracker,
+            )
+
             if directory_test:
                 # Upload the directory to Supabase storage
-                await self.setup_test_repository_workflow(result, directory_test, repo_id, token_id, user_id,git_provider,auth_token)
+                await self.setup_test_repository_workflow(
+                    result,
+                    directory_test,
+                    repo_id,
+                    token_id,
+                    user_id,
+                    git_provider,
+                    auth_token,
+                    trace=trace,
+                    tracker=tracker,
+                )
 
-            end_time = datetime.now(timezone.utc)
+            end_time = datetime.now(UTC)
             processing_time = (end_time - start_time).total_seconds()
 
             return {
@@ -216,8 +243,10 @@ class LoadTestProcessor(BaseProcessor):
             }
 
         except Exception as e:
-            self.logger.error(f"Load test failed for context {context_id}: {e}")
-            end_time = datetime.now(timezone.utc)
+            self.logger.error(f"Load test failed for context {context_id}: {e}", exc_info=True)
+            if trace:
+                trace.record_error(e, summary="Load test processor failure")
+            end_time = datetime.now(UTC)
             processing_time = (end_time - start_time).total_seconds()
 
             return {
@@ -228,7 +257,13 @@ class LoadTestProcessor(BaseProcessor):
                 "failed_at": end_time.isoformat()
             }
 
-    async def _execute_load_test(self, context_id: str, job_payload: Dict[str, Any])  -> Tuple[Any, Path|None]:
+    async def _execute_load_test(
+        self,
+        context_id: str,
+        job_payload: Dict[str, Any],
+        trace: JobTraceMetaData | None = None,
+        tracker: JobTracker | None = None,
+    ) -> Tuple[Any, Path | None]:
         """Execute the actual load test"""
         # Replace this with your actual load testing logic
         # This could be:
@@ -243,23 +278,32 @@ class LoadTestProcessor(BaseProcessor):
 
         # Example: Run a Locust test file
         if test_type == LoadTestConfig.DEFAULT_TEST_TYPE:
+            # Track: we’re about to prepare workspace / run generation
+            if tracker:
+                try:
+                    await tracker.update_step(JobLevels.WORKDIR)
+                except Exception:
+                    logger.warning("tracker.update_step(WORKDIR) failed", exc_info=True)
 
             job_request = LoadTestRequest(**job_payload.get("data",{}))
-            return await self._run_locust_test(job_request, context_id)
+            return await self._run_locust_test(job_request, context_id, trace=trace, tracker=tracker)
 
-        else:
-            # Simulate other test types
-            await asyncio.sleep(5)  # Simulate processing time
-            return {
-                "test_type": test_type,
-                "duration": 5,
-                "requests_per_second": 100,
-                "total_requests": 500,
-                "success_rate": 0.98
-            },None
+        # Simulate other test types
+        await asyncio.sleep(5)  # Simulate processing time
+        return {
+            "test_type": test_type,
+            "duration": 5,
+            "requests_per_second": 100,
+            "total_requests": 500,
+            "success_rate": 0.98
+        }, None
 
-    async def prepare_repository(self, repo_name: str) ->Path:
-
+    async def prepare_repository(
+        self,
+        repo_name: str,
+        trace: JobTraceMetaData | None = None,
+        tracker: JobTracker | None = None,
+    ) -> Path:
         repo_path = self.base_dir / repo_name
         try:
 
@@ -270,11 +314,17 @@ class LoadTestProcessor(BaseProcessor):
                     return repo_path
         except OSError as e:
             self.logger.exception(f"Failed to prepare repository {repo_name}: {e}")
-        
+            if trace:
+                trace.record_error(e, summary="prepare_repository failed")
             raise
 
-
-    async def _run_locust_test(self, data:LoadTestRequest,context_id:str) -> Tuple[List[Dict[str, Any]], Path]:
+    async def _run_locust_test(
+        self,
+        data: LoadTestRequest,
+        context_id: str,
+        trace: JobTraceMetaData | None = None,
+        tracker: JobTracker | None = None,
+    ) -> Tuple[List[Dict[str, Any]], Path]:
         """Run Locust load test"""
         if not data:
 
@@ -289,23 +339,47 @@ class LoadTestProcessor(BaseProcessor):
 
         repo_name = data.get_effective_output_path()
 
-        output_dir = await self.prepare_repository(repo_name)
+        # Track working directory creation
+        if tracker:
+            try:
+                await tracker.update_step(JobLevels.WORKDIR)
+            except Exception:
+                logger.warning("tracker.update_step(WORKDIR) failed", exc_info=True)
 
-        result =  await load_test_service.generate_tests_from_swagger_url(swagger_url=data.url,
-                                                                          output_dir=output_dir,
-                                                                          custom_requirement=data.custom_requirement or "",
-                                                                          host=data.host or "localhost",
-                                                                          auth=data.auth or False,
-                                                                          operation_id=context_id
-                                                                          )
+        output_dir = await self.prepare_repository(repo_name, trace=trace, tracker=tracker)
+
+        # Track: switch to “analysis/generation”
+        if tracker:
+            try:
+                await tracker.update_step(JobLevels.SWAGGER_TEST_GENERATION)
+            except Exception:
+                logger.warning("tracker.update_step(SWAGGER_TEST_GENERATION) failed", exc_info=True)
+
+        result = await load_test_service.generate_tests_from_swagger_url(
+            swagger_url=data.url,
+            output_dir=output_dir,
+            custom_requirement=data.custom_requirement or "",
+            host=data.host or "localhost",
+            auth=data.auth or False,
+            operation_id=context_id
+        )
         if result:
             return result, output_dir
         else:
             raise ValueError("Load test generation failed")
 
-
-
-    async def setup_test_repository_workflow(self, result:Any, directory_test: Path, repo_id: str, token_id: str, user_id: str,git_provider:str,auth_token:str|None) -> None:
+    async def setup_test_repository_workflow(
+        self,
+        result: Any,
+        directory_test: Path,
+        repo_id: str,
+        token_id: str,
+        user_id: str,
+        git_provider: str,
+        auth_token: str | None,
+        trace: JobTraceMetaData | None = None,
+        tracker: JobTracker | None = None,
+    ) -> None:
         """
         Create a new repository and commit generated test files.
 
@@ -339,13 +413,32 @@ class LoadTestProcessor(BaseProcessor):
 
 
         validation_service = RepositoryValidationService(repo_repository=RepoRepository(),user_repository=UserRepository(),git_label_repository=GitLabelRepository())
+        
+        
+        # Track: prechecks (repo/user/token validation)
+        if tracker:
+            try:
+                await tracker.update_step(JobLevels.PRECHECKS)
+            except Exception:
+                logger.warning("tracker.update_step(PRECHECKS) failed", exc_info=True)
+        
         repo_info, user_info, git_label = await  validation_service.validate_repository_access(repo_id, user_id,
                                                                                               token_id)
 
         repo_name = directory_test.name
-
+        
+        # reflect extra metadata into trace if you want
+        if trace:
+            trace.add_metadata(repository_branch=None, repository_html_url=None, user_email= getattr(user_info, "email", None))
 
         try:
+            # Track: auth
+            if tracker:
+                try:
+                    await tracker.update_step(JobLevels.AUTH)
+                except Exception:
+                    logger.warning("tracker.update_step(AUTH) failed", exc_info=True)
+            
             decrypted_token = get_token(git_label.token_value,
                                         user_info.encryption_salt,
                                         git_label.git_hosting,
@@ -355,6 +448,14 @@ class LoadTestProcessor(BaseProcessor):
 
 
             files = extract_files_for_commit(result, directory_test)
+
+            # Track: context finalize (we’re about to create repo/branch/commit)
+            if tracker:
+                try:
+                    await tracker.update_step(JobLevels.CONTEXT_FINALIZE)
+                except Exception:
+                    logger.warning("tracker.update_step(CONTEXT_FINALIZE) failed", exc_info=True)
+
             await self._execute_git_workflow(
                     fetcher=fetcher,
                     token=decrypted_token,
@@ -365,8 +466,10 @@ class LoadTestProcessor(BaseProcessor):
                     repo_id=repo_id
                 )
         except Exception as e:
-                self.logger.error(f"Repository creation failed: {e}")
-                raise
+            self.logger.error(f"Repository creation failed: {e}", exc_info=True)
+            if trace:
+                trace.record_error(e, summary="git workflow failed")
+            raise
 
     def _rollback_git_operations(
             self,
@@ -422,7 +525,9 @@ class LoadTestProcessor(BaseProcessor):
             repo_info,
             git_provider: str,
             files: list,
-            repo_id: str
+            repo_id: str,
+            trace: JobTraceMetaData | None = None,
+            tracker: JobTracker | None = None,
     ) -> None:
         """Execute git operations with automatic rollback on failure."""
         created_repo = None
@@ -446,7 +551,12 @@ class LoadTestProcessor(BaseProcessor):
             self.logger.info(f"Repository {repo_id} created successfully")
             repo_full_name, default_branch = get_repo_info(git_provider, created_repo)
 
-            # Create branch
+            if tracker:
+                try:
+                    await tracker.update_step(JobLevels.SOURCE_FETCH)
+                except Exception:
+                    logger.warning("tracker.update_step(SOURCE_FETCH) failed", exc_info=True)
+
             created_branch = fetcher.create_branch(
                 token, repo_full_name, branch_name, default_branch
             )
@@ -457,7 +567,13 @@ class LoadTestProcessor(BaseProcessor):
 
             self.logger.info(f"Branch {branch_name} created successfully")
 
-            # Commit files
+            # Track: VECTOR_STORE as a proxy for “commit assets”
+            if tracker:
+                try:
+                    await tracker.update_step(JobLevels.VECTOR_STORE)
+                except Exception:
+                    logger.warning("tracker.update_step(VECTOR_STORE) failed", exc_info=True)
+
             fetcher.commit_files(
                 token,
                 repo_full_name,
@@ -468,8 +584,14 @@ class LoadTestProcessor(BaseProcessor):
                 author_email=repo_info.repo_author_email
             )
 
-        except:
-            # Rollback operations
+            # Optionally update trace with repo page / branch
+            if trace:
+                trace.add_metadata(
+                    repository_branch=branch_name,
+                    repository_html_url=getattr(created_repo, "html_url", None)
+                )
+
+        except Exception:
             self._rollback_git_operations(
                 fetcher=fetcher,
                 token=token,
