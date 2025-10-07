@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="x-apple-disable-message-reformatting">
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>{{ job_type or 'Operation' }} succeeded</title>
+    <style>
+      .code { font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; background:#0b1220; color:#e5e7eb; border:1px solid #1f2937; border-radius:6px; padding:2px 6px; }
+      .k { width:160px; color:#64748b; vertical-align:top; padding:6px 0; }
+      .v { color:#0f172a; padding:6px 0; }
+      .muted { color:#94a3b8; }
+    </style>
+  </head>
+  <body style="margin:0;background:#f6f7fb;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#0f172a;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 0;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="720" cellspacing="0" cellpadding="0" style="background:#ffffff;border-radius:12px;box-shadow:0 2px 10px rgba(15,23,42,.06);overflow:hidden;border:1px solid #e5e7eb;">
+            <!-- Header -->
+            <tr>
+              <td style="padding:20px 24px;border-bottom:1px solid #e5e7eb;">
+                <div style="font-size:18px;font-weight:800;">✅ {{ job_type or 'Operation' }} succeeded</div>
+                <div style="margin-top:6px;color:#475569;">Repository Analysis Operation completed successfully.</div>
+              </td>
+            </tr>
+
+            <!-- Facts -->
+            <tr>
+              <td style="padding:14px 24px 18px 24px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size:14px;">
+                  <tr>
+                    <td class="k">Repository</td>
+                    <td class="v">
+                      {% if repository_html_url %}
+                        <a href="{{ repository_html_url }}" style="color:#2563eb;text-decoration:none;">{{ repository_html_url }}</a>
+                      {% else %}
+                        <span class="muted">—</span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="k">Branch</td>
+                    <td class="v">
+                      {% if repository_branch %}
+                        <span class="code">{{ repository_branch }}</span>
+                      {% else %}
+                        <span class="muted">—</span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="k">Queued at</td>
+                    <td class="v">
+                      {% if job_queued_at %}
+                        {{ job_queued_at }}
+                      {% else %}
+                        <span class="muted">—</span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

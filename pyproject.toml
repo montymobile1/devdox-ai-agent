@@ -7,7 +7,7 @@ version = "0.0.1"
 description = "devdox-ai-agent is an MCP server to answer the user"
 requires-python = ">=3.12"
 dependencies = [
-    # Core dependencies
+   # Core dependencies
    "autopep8==2.3.2",
    "click==8.2.1",
    "tortoise-orm>=0.20.0",
@@ -39,18 +39,18 @@ dependencies = [
    "pydantic-settings==2.10.1",
    "pydantic_core==2.33.2",
    "email_validator==2.2.0",
-    "tembo-pgmq-python==0.10.0",
-    #models
-    "devdox-ai-models @ git+https://github.com/montymobile1/devdox-ai-models.git@a34f8d1",
-
-    # Encryption package
-    "devdox-ai-encryption @ git+https://github.com/montymobile1/devdox-ai-encryption.git@4eefae1",
-    "devdox-ai-git @ git+https://github.com/montymobile1/devdox-ai-git.git@e36ee1a",
-    "devdox-ai-locust==0.1.2",
-    "locust==2.0.0",
-    "langchain-together==0.3.0",
-    "together==1.5.17",
-    "cohere==5.16.1"
+   "tembo-pgmq-python==0.10.0",
+   #models
+   "devdox-ai-models @ git+https://github.com/montymobile1/devdox-ai-models.git@a34f8d1",
+   # Encryption package
+   "devdox-ai-encryption @ git+https://github.com/montymobile1/devdox-ai-encryption.git@4eefae1",
+   "devdox-ai-git @ git+https://github.com/montymobile1/devdox-ai-git.git@e36ee1a",
+   "devdox-ai-locust==0.1.2",
+   "locust==2.0.0",
+   "langchain-together==0.3.0",
+   "together==1.5.17",
+   "cohere==5.16.1",
+   "fastapi-mail==1.4.0"
 ]
 
 [project.optional-dependencies]

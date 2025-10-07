@@ -1,5 +1,9 @@
 import traceback
 
+from app.config import settings
+from app.infrastructure.mailing_service import Template
+from app.infrastructure.mailing_service.container import get_email_dispatcher
+from app.infrastructure.mailing_service.models.context_shapes import ProjectAnalysisFailure, ProjectAnalysisSuccess
 from app.infrastructure.queue_job_tracker.job_trace_metadata import JobTraceMetaData
 from app.infrastructure.queue_job_tracker.job_tracker import JobLevels, JobTracker, JobTrackerManager
 from app.infrastructure.supabase_queue import SupabaseQueue
@@ -35,8 +39,9 @@ class QueueConsumer:
         self.processors = {
             "load_tests": LoadTestProcessor(),
             "load_locust": LoadTestProcessor()
-
         }
+        
+        self.email_dispatch = get_email_dispatcher()
 
         self._tracker_manager = JobTrackerManager()
 
@@ -239,6 +244,9 @@ class QueueConsumer:
                         "worker_id": worker_id
                     }
                 )
+                
+                await self._notify_success(job_tracer=trace)
+                
             else:
                 # If we failed to delete/ack the message, schedule a retry so it doesn't get stuck
                 exc = RuntimeError("Queue complete_job returned False")
@@ -265,6 +273,10 @@ class QueueConsumer:
             retry=True,
         )
         self._record_failure_outcome(perma)
+        
+        if perma:
+            await self._notify_permanent_failure(job_tracer=trace)
+        
         return perma, handled_ok
     
     def _record_failure_outcome(self, perma: bool):
@@ -289,3 +301,61 @@ class QueueConsumer:
             except Exception as e:
                 self.logger.error(f"Stats reporter error: {e}")
                 await asyncio.sleep(30)
+    
+    async def _notify_permanent_failure(self, job_tracer):
+        try:
+            
+            serialized_model = job_tracer.model_dump()
+            
+            if not settings.mail.MAIL_AUDIT_RECIPIENTS:
+                raise RuntimeError("MAIL_AUDIT_RECIPIENTS is not configured")
+            
+            context = ProjectAnalysisFailure(
+                repository_html_url=serialized_model["repository_html_url"],
+                user_email=serialized_model["user_email"],
+                repository_branch=serialized_model["repository_branch"],
+                job_context_id=serialized_model["job_context_id"],
+                job_type=serialized_model["job_type"],
+                job_queued_at=serialized_model["job_queued_at"],
+                job_started_at=serialized_model["job_started_at"],
+                job_finished_at=serialized_model["job_finished_at"],
+                job_settled_at=serialized_model["job_settled_at"],
+                error_type=serialized_model["error_type"],
+                error_summary=serialized_model["error_summary"],
+                error_chain=serialized_model["error_chain"],
+                run_ms=serialized_model["run_ms"],
+                total_ms=serialized_model["total_ms"],
+                user_id=serialized_model["user_id"],
+                repo_id=serialized_model["repo_id"],
+            )
+            
+            email_dispatcher = get_email_dispatcher()
+            await email_dispatcher.send_templated_html(
+                to=settings.mail.MAIL_AUDIT_RECIPIENTS,
+                template=Template.PROJECT_ANALYSIS_FAILURE,
+                context=context,
+            )
+        except Exception:
+            self.logger.warning("Notifier dev alert failed", exc_info=True)
+
+    async def _notify_success(self, job_tracer):
+        try:
+            
+            serialized_model = job_tracer.model_dump()
+            
+            context = ProjectAnalysisSuccess(
+                repository_html_url=serialized_model.get("repository_html_url"),
+                repository_branch=serialized_model.get("repository_branch"),
+                job_type=serialized_model.get("job_type"),
+                job_queued_at=serialized_model.get("job_queued_at")
+            )
+            
+            email_dispatcher = get_email_dispatcher()
+            await email_dispatcher.send_templated_html(
+                to=[job_tracer.user_email],
+                template=Template.PROJECT_ANALYSIS_SUCCESS,
+                context=context,
+            )
+        except Exception:
+            self.logger.warning("Notifier user success failed", exc_info=True)
+    

@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="x-apple-disable-message-reformatting">
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Failure — {{ job_type }}</title>
+    <style>
+      .chip { display:inline-block; padding:2px 8px; border-radius:999px; font-size:12px; line-height:18px; background:#111827; color:#e5e7eb; border:1px solid #374151; }
+      .code { font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; background:#0b1220; color:#e5e7eb; border:1px solid #1f2937; border-radius:6px; padding:2px 6px; }
+      .muted { color:#9ca3af; }
+      .k { width:180px; color:#9ca3af; vertical-align:top; padding:6px 0; }
+      .v { color:#e5e7eb; padding:6px 0; }
+      .section-title { margin:18px 0 8px 0; font-size:14px; font-weight:700; color:#e5e7eb; }
+      /* console-look for stack area + smaller font */
+      .mono { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size:12px; }
+    </style>
+  </head>
+  <body style="margin:0;background:#0b1220;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#e5e7eb;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="padding:24px 0;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="880" cellspacing="0" cellpadding="0" style="background:#111827;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.35);overflow:hidden;border:1px solid #1f2937;">
+            <!-- Header (summary moved out) -->
+            <tr>
+              <td style="padding:18px 22px;border-bottom:1px solid #1f2937;">
+                <div style="font-size:18px;font-weight:800;letter-spacing:.2px;">
+                  ❌ Failure — <span class="chip">{{ job_type }}</span>
+                </div>
+              </td>
+            </tr>
+
+            <!-- Facts -->
+            <tr>
+              <td style="padding:16px 22px;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size:13px;">
+                  <tr>
+                    <td class="k">Repository</td>
+                    <td class="v">
+                      {% if repository_html_url %}
+                        <a href="{{ repository_html_url }}" style="color:#60a5fa;text-decoration:none;">{{ repository_html_url }}</a>
+                      {% else %}
+                        <span class="muted">—</span>
+                      {% endif %}
+                      &nbsp;•&nbsp; repo_id <span class="code">{{ repo_id }}</span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="k">Branch</td>
+                    <td class="v">
+                      {% if repository_branch %}
+                        <span class="code">{{ repository_branch }}</span>
+                      {% else %}
+                        <span class="muted">—</span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="k">User</td>
+                    <td class="v">
+                      {% if user_email %}
+                        <a href="mailto:{{ user_email }}" style="color:#60a5fa;text-decoration:none;">{{ user_email }}</a>
+                      {% else %}
+                        <span class="muted">—</span>
+                      {% endif %}
+                      &nbsp;•&nbsp; user_id <span class="code">{{ user_id }}</span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="k">Context ID</td>
+                    <td class="v">
+                      {% if job_context_id %}
+                        <span class="code">{{ job_context_id }}</span>
+                      {% else %}
+                        <span class="muted">—</span>
+                      {% endif %}
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Timing -->
+            <tr>
+              <td style="padding:0 22px 10px 22px;">
+                <div class="section-title">Timing</div>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="font-size:13px;">
+                  <tr>
+                    <td class="k">Queued at</td>
+                    <td class="v">{% if job_queued_at %}{{ job_queued_at }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                  </tr>
+                  <tr>
+                    <td class="k">Started at</td>
+                    <td class="v">{% if job_started_at %}{{ job_started_at }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                  </tr>
+                  <tr>
+                    <td class="k">Finished at</td>
+                    <td class="v">{% if job_finished_at %}{{ job_finished_at }}{% else %}<span class="muted">—</span>{% endif %}</td>
+                  </tr>
+                  <tr>
+                    <td class="k">Settled at</td>
+                    <td class="v">
+                      {% if job_settled_at %}{{ job_settled_at }}{% else %}<span class="muted">—</span>{% endif %}
+                      <span class="muted"> (includes post-operation)</span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="k">Run (core)</td>
+                    <td class="v">
+                      {% if run_ms %}<span class="code">{{ run_ms }}</span> <span class="muted">ms</span>{% else %}<span class="muted">—</span>{% endif %}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="k">Total (queue→settled)</td>
+                    <td class="v">
+                      {% if total_ms %}<span class="code">{{ total_ms }}</span> <span class="muted">ms</span>{% else %}<span class="muted">—</span>{% endif %}
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+
+            <!-- Stacktrace (meta + fixed-rail tree + tighter message boxes) -->
+            <tr>
+              <td style="padding:4px 22px 18px 22px;">
+                <div class="section-title">
+                  Stack trace
+                  {% if error_stacktrace_truncated %}
+                    <span class="chip" style="margin-left:8px;background:#7f1d1d;border-color:#991b1b;">TRUNCATED</span>
+                  {% endif %}
+                </div>
+
+                {# META — NO CHAIN, just outermost & innermost #}
+                {% if error_chain and error_chain|length > 0 %}
+                  {% set outer = error_chain|last %}
+                  {% set inner = error_chain|first %}
+
+                  <div class="mono" style="background:#0b1220;border:1px solid #1f2937;color:#e5e7eb;padding:8px 10px;border-radius:8px;margin:0 0 10px 0;">
+                    {% if error_summary %}
+                      <div style="margin-bottom:6px;">
+                        <span class="chip" style="background:#0f172a;border-color:#334155;color:#a5b4fc;margin-right:6px;">Summary</span>
+                        <span>{{ error_summary }}</span>
+                      </div>
+                    {% endif %}
+
+                    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:4px;">
+                      <span class="chip" style="background:#111827;border-color:#374151;color:#cbd5e1;">Outermost</span>
+                      <span class="code">{{ outer.func }}</span>
+                      {% set is_err = 'Error' in outer.type %}
+                      <span class="chip" style="background:{% if is_err %}#1b1313{% else %}#0f172a{% endif %};border-color:{% if is_err %}#7f1d1d{% else %}#334155{% endif %};color:{% if is_err %}#fca5a5{% else %}#a5b4fc{% endif %};">{{ outer.type }}</span>
+                    </div>
+
+                    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+                      <span class="chip" style="background:#111827;border-color:#374151;color:#cbd5e1;">Innermost</span>
+                      <span class="code">{{ inner.func }}</span>
+                      {% set is_err2 = 'Error' in inner.type %}
+                      <span class="chip" style="background:{% if is_err2 %}#1b1313{% else %}#0f172a{% endif %};border-color:{% if is_err2 %}#7f1d1d{% else %}#334155{% endif %};color:{% if is_err2 %}#fca5a5{% else %}#a5b4fc{% endif %};">{{ inner.type }}</span>
+                    </div>
+                  </div>
+                {% endif %}
+
+                {% if error_chain and error_chain|length > 0 %}
+                  {% set RAIL_W     = (template_layout_rail_w     | default(template_layout_rail_w__default)) %}
+                  {% set STEP       = (template_layout_step       | default(template_layout_step__default))  %}
+                  {% set MAX_LEVELS = (template_layout_max_levels | default(template_layout_max_levels__default))   %}
+
+                  <div class="mono" style="background:#0b1220;border:1px solid #1f2937;color:#e5e7eb;padding:8px 10px;border-radius:8px;max-height:520px;overflow:auto;">
+
+                    {% for n in error_chain %}
+                      {% set vd = (n.depth if n.depth < MAX_LEVELS else MAX_LEVELS) %}
+                      {% set hidden = (n.depth - vd) %}
+                      {% set dot_left = 8 + (vd * STEP) %}
+                      {% set elbow_left = dot_left + 10 %}
+                      {% set elbow_width = (RAIL_W - elbow_left + 10) if (RAIL_W - elbow_left + 10) > 12 else 12 %}
+
+                      <div style="
+                          position:relative;
+                          padding:6px 10px 8px {{ RAIL_W + 8 }}px;
+                          {% if not loop.first %}border-top:1px solid #1f2937;{% endif %}
+                          min-height:30px;
+                        ">
+
+                        <!-- rail area -->
+                        <span aria-hidden="true" style="position:absolute; left:0; top:0; bottom:0; width:{{ RAIL_W }}px;"></span>
+
+                        <!-- vertical continuation -->
+                        {% if not loop.last %}
+                          <span aria-hidden="true" style="position:absolute; left:{{ dot_left + 5 }}px; top:20px; bottom:6px; border-left:1px dashed #334155;"></span>
+                        {% endif %}
+
+                        <!-- node dot -->
+                        <span aria-hidden="true" style="position:absolute; left:{{ dot_left }}px; top:10px; width:10px; height:10px; border-radius:999px; background:#1f2937; border:1px solid #475569; box-shadow:0 0 0 2px #0b1220;"></span>
+
+                        <!-- elbow -->
+                        <span aria-hidden="true" style="position:absolute; left:{{ elbow_left }}px; top:15px; width:{{ elbow_width }}px; border-top:1px solid #334155;"></span>
+
+                        <!-- clamped-depth indicator -->
+                        {% if hidden > 0 %}
+                          <span class="chip" title="Visually clamped: +{{ hidden }} deeper level(s)" style="position:absolute; left:6px; top:2px; background:#111827; border-color:#374151; color:#9ca3af;">+{{ hidden }}</span>
+                        {% endif %}
+
+                        <!-- function chip -->
+                        <span class="code">{{ n.func }}</span>
+
+                        <!-- type chip -->
+                        {% set tbg = '#0f172a' %}{% set tbd = '#334155' %}{% set tfg = '#a5b4fc' %}
+                        {% if 'Error' in n.type %}{% set tbg = '#1b1313' %}{% set tbd = '#7f1d1d' %}{% set tfg = '#fca5a5' %}{% endif %}
+                        <span class="chip" style="margin-left:6px;background:{{ tbg }};border-color:{{ tbd }};color:{{ tfg }};">{{ n.type }}</span>
+
+                        <!-- location chip -->
+                        {% if n.file %}
+                          <span class="chip" style="margin-left:6px;background:#0b1220;border-color:#293341;color:#9ca3af;">{{ n.file }}:{{ n.line }}</span>
+                        {% endif %}
+
+                        <!-- MESSAGE BOX -->
+                        {% if n.msg %}
+                          <div style="margin-top:6px;background:#0f172a;border:1px solid #334155;border-radius:8px;padding:6px 10px;text-align:left;">
+                            <div class="muted" style="font-size:11px;margin-bottom:4px;">Message</div>
+                            <div class="mono" style="font-size:13px;word-break:break-word;margin:0;padding: 5px" title="{{ n.msg }}">
+                              {{ n.msg|e }}
+                            </div>
+                          </div>
+                        {% endif %}
+                      </div>
+                    {% endfor %}
+                  </div>
+
+                {% elif error_stacktrace %}
+                  <!-- Fallback: original plain stacktrace -->
+                  <pre class="mono" style="background:#0b1220;border:1px solid #1f2937;color:#e5e7eb;padding:10px;border-radius:8px;white-space:pre-wrap;word-break:break-word;max-height:520px;overflow:auto;margin:0;">{{ error_stacktrace }}</pre>
+                {% else %}
+                  <div class="muted">—</div>
+                {% endif %}
+              </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td style="padding:12px 22px;border-top:1px solid #1f2937;color:#9ca3af;font-size:12px;">
+                DevDox
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
