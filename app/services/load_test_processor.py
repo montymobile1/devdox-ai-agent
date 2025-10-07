@@ -204,9 +204,9 @@ class LoadTestProcessor(BaseProcessor):
         # hint tracker we're entering logical analysis phase
         if tracker:
             try:
-                await tracker.update_step(JobLevels.ANALYSIS)
+                await tracker.update_step(JobLevels.LOAD_TESTS)
             except Exception:
-                logger.warning("tracker.update_step(ANALYSIS) failed", exc_info=True)
+                logger.warning("tracker.update_step(LOAD_TESTS) failed", exc_info=True)
 
         try:
             # Simulate load test execution (replace with actual logic)
@@ -351,9 +351,9 @@ class LoadTestProcessor(BaseProcessor):
         # Track: switch to “analysis/generation”
         if tracker:
             try:
-                await tracker.update_step(JobLevels.ANALYSIS)
+                await tracker.update_step(JobLevels.SWAGGER_TEST_GENERATION)
             except Exception:
-                logger.warning("tracker.update_step(ANALYSIS) failed", exc_info=True)
+                logger.warning("tracker.update_step(SWAGGER_TEST_GENERATION) failed", exc_info=True)
 
         result = await load_test_service.generate_tests_from_swagger_url(
             swagger_url=data.url,

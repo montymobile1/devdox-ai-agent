@@ -54,7 +54,8 @@ class JobLevels(str, Enum):
     AUTH= "auth"              # building authenticated git client
     WORKDIR= "workdir"           # preparing local work directory
     SOURCE_FETCH= "source_fetch"      # cloning / loading repo contents
-    ANALYSIS= "analysis"          # repository analysis phase (README/deps/etc.)
+    LOAD_TESTS = "loading_tests"
+    SWAGGER_TEST_GENERATION="swagger_test_generation"
     VECTOR_STORE= "vector_store"      # persisting vectors/metadata
     CONTEXT_FINALIZE= "context_finalize"  # updating domain context (status, counts)
     QUEUE_ACK= "queue_ack"         # acknowledging/finishing the queue message
