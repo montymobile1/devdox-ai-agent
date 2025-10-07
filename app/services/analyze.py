@@ -1,19 +1,25 @@
 import logging
-from typing import Annotated, AsyncGenerator, List
+from typing import Annotated, Any, AsyncGenerator, Dict, List, Tuple
 from fastapi import Depends
 from models_src.dto.repo import RepoResponseDTO
-from together import Together
-import cohere
+from together import AsyncTogether
 import asyncio
 import json
 from models_src.repositories.code_chunks import TortoiseCodeChunksStore as CodeChunksStore
 from models_src.repositories.repo import TortoiseRepoStore as RepoStore
+from cohere import AsyncClientV2 as CohereAsyncClientV2
+
 from app.utils.auth import UserClaims
 from app.config import settings
 
 
 class AnalyseService:
-
+    
+    EMBEDDING_MODEL_1 = "togethercomputer/m2-bert-80M-32k-retrieval"
+    EMBEDDING_MODEL_2 = "meta-llama/Llama-3.3-70B-Instruct-Turbo"
+    
+    TOTAL_K = 10  # luggage limit for LLM context
+    
     def __init__(self, repo_store: RepoStore, code_chunks_store: CodeChunksStore):
 
         self.repo_store = repo_store
@@ -26,157 +32,214 @@ class AnalyseService:
         code_chunks_store: Annotated[CodeChunksStore, Depends()],
     ) -> "AnalyseService":
         return cls(repo_store, code_chunks_store)
-
+    
     async def answer_question(
         self,
         user_claims: UserClaims,
-        question:str,
-        relative_path:str
-    )-> AsyncGenerator[str, None]:
-        together_client = Together(api_key=settings.TOGETHER_API_KEY)
-        readme_content = ""
-
-        # Get Repo
+        questions: List[str],
+        relative_path: str
+    ) -> AsyncGenerator[str, None]:
+        async_together_client = AsyncTogether(api_key=settings.TOGETHER_API_KEY)
+        
+        # 1) Find repo
+        # Figure out which repo we’re supposed to analyze for this user + path.
+        # If we can’t find that repo, exit early
         repo_info = await self.repo_store.find_by_user_and_path(
             user_id=user_claims.sub, relative_path=relative_path
         )
-
         if not repo_info:
             yield "No relevant repo found."
             return
 
-        query_embedding = self.generate_embedding(question)
-        
-        results = await self.code_chunks_store.get_user_repo_chunks(
+        # 2) Clean questions (keep separate)
+        questions = [q.strip() for q in (questions or []) if q and q.strip()]
+        if not questions:
+            yield "No questions provided."
+            return
+
+        # 3) Batched, async embeddings
+        try:
+            q_vecs = await self._generate_embeddings_batch(
+                together=async_together_client, questions=questions, model_api_string=self.EMBEDDING_MODEL_1
+            )
+        except Exception:
+            logging.exception("Failed to generate embeddings batch")
+            yield "Failed to generate embeddings for questions."
+            return
+
+        # Dimension guard
+        # Basic safety check: ensure we got a VECTOR_SIZE-dim vector (what our DB expects).
+        emb_dim = len(q_vecs[0])
+        if any(len(v) != emb_dim for v in q_vecs):
+            yield "Embedding dimensions inconsistent, aborting."
+            return
+
+        if emb_dim != settings.VECTOR_SIZE:
+            yield f"Embedding dimension mismatch: DB={settings.VECTOR_SIZE}, model={emb_dim}."
+            return
+
+        # 4) ONE fused SQL query (no N+1)
+        results = await self.code_chunks_store.get_user_repo_chunks_multi(
             user_id=user_claims.sub,
             repo_id=repo_info.id,
-            query_embedding=query_embedding[0],
-            limit=5
+            query_embeddings=q_vecs,
+            emb_dim=emb_dim,
+            limit=self.TOTAL_K,
         )
-        
         if not results:
             yield "No code chunks found."
             return
 
+        # 5) README preface: If there’s README content for this repo, stream it first as helpful context.
         readme_content = await self._get_readme_content(user_claims.sub, str(repo_info.id))
         if readme_content:
             yield f"README/Setup information:\n{readme_content}"
 
+        # 6) Rerank across questions (sum per-question relevance)
+        # Improve ordering using a cross-encoder reranker (reads the text, not just vector math).
+        # This looks at the documents versus EACH question and adds up relevance,
+        # so items that answer multiple questions move higher.
+        reranked = await self.rerank_results_multi(results, questions, top_k=self.TOTAL_K)
+        if not reranked:
+            yield json.dumps({"data": "No relevant reranked results found."})
+            return
 
-        # Step 1: Rerank Results
-        reranked_results = self.rerank_results(results, question, top_k=10)
+        # 7) Generate final answer (answers each question separately)
+        # Ask the LLM to write the answer using those top chunks as context.
+        # We pass the questions list so the model answers “Q1, Q2, …” in separate sections.
+        async for chunk in self._process_reranked_results(
+            together=async_together_client, reranked_results=reranked, questions=questions, repo_info=repo_info
+        ):
+            yield chunk
+    
+    async def _generate_embeddings_batch(
+            self,
+            together: AsyncTogether,
+            questions: list[str],
+            model_api_string: str | None = None,
+    ) -> list[list[float]]:
+        """Batched, async embeddings. Returns one vector per question, in order."""
+        model = model_api_string or self.EMBEDDING_MODEL_1
+        
+        resp = await together.embeddings.create(input=questions, model=model)
 
-        # Step 2: Stream from LLM
-        if reranked_results:
+        # Extract vectors and preserve keep order
+        vecs = [item.embedding for item in resp.data]
+        
+        if not vecs:
+            raise RuntimeError("Embeddings API returned no vectors.")
+        
+        # Check if all the vectors have the same dimension cause its required
+        emb_dim = len(vecs[0])
+        if any(len(v) != emb_dim for v in vecs):
+            raise RuntimeError("Embeddings returned inconsistent dimensions.")
+        
+        return vecs
+    
+    # RERANKING PROCESS
 
-                async for chunk in self._process_reranked_results(
-                            together_client, reranked_results, question, repo_info
-                ):
-                    yield chunk
-
-        else:
-                yield json.dumps({"data": "No relevant reranked results found."})
-
-    async def _process_reranked_results(self, together_client, reranked_results, question, repo_info):
-        """Extract reranked results processing into separate method"""
+    async def _process_reranked_results(
+            self,
+            together: AsyncTogether,
+            reranked_results: List[Dict[str, Any]],
+            questions: List[str],
+            repo_info: RepoResponseDTO,
+    ):
         combined_text = ""
-        file_list = []
-
+        file_list: List[str] = []
+        
         for result in reranked_results:
-            file_name = result.get('file_name', '')
-            text = result.get('content', '')
+            file_name = result.get("file_name", "")
+            text = result.get("content", "")
             combined_text += f"\n### FILE: {file_name} ###\n{text}\n"
             file_list.append(file_name)
-
-        context_prompt = f" Create a single comprehensive documentation that covers all functionality across these files: {', '.join(file_list)}. \n{combined_text}"
-        instructions_context = ""
-        async for chunk in self._generate_documentation(
-                client=together_client,
-                context=context_prompt,
-                question=question,
-                previous_messages=[],
-                instructions=instructions_context,
-                repo_info=repo_info
-        ):
-
-            yield chunk
-
-
-    def rerank_results(self, results: list, last_message_content: str, top_k: int = 10):
-        """Rerank results based on multiple factors"""
-
-        # Return early if no results to rerank
-        if not results:
-            return []
-
-        # Return early if query is empty
-        if not last_message_content or not last_message_content.strip():
-            logging.warning("Empty query provided for reranking, returning original results")
-            return results
-
-        try:
-            co_cohere = cohere.ClientV2(api_key=settings.COHERE_API_KEY)
-            documents = []
-
-            for doc in results:
-                content = doc.get("content", "")
-                if not content.strip():  # Skip empty documents
-                    continue
-                documents.append(content)
-
-            # If no valid documents found, return original results
-            if not documents:
-                logging.warning("No valid documents found for reranking")
-                return results
-
-            response = co_cohere.rerank(
-                query=last_message_content,
-                documents=documents,
-                top_n=min(len(documents), top_k),
-                model="rerank-v3.5"
-            )
-
-            # Check if reranking response is valid
-            if not response or not hasattr(response, 'results') or not response.results:
-                logging.warning("Invalid reranking response received")
-                return results
-
-            # Create a copy of results to avoid mutating the original
-            reranked_results = results.copy()
-
-            # Update documents with rerank scores
-            for result in response.results:
-                if result.index < len(reranked_results):
-                    reranked_results[result.index]['rerank_score'] = result.relevance_score
-
-            # Filter out results without rerank scores (in case some failed)
-            valid_results = [r for r in reranked_results if 'rerank_score' in r]
-
-            if not valid_results:
-                logging.warning("No results received rerank scores")
-                return results
-
-            # Sort by rerank score and limit to top_k
-            valid_results.sort(key=lambda x: x.get('rerank_score', 0), reverse=True)
-
-            return valid_results[:top_k]
-
-        except Exception as e:
-            logging.error(f"Cross-encoder reranking failed: {e}")
-            # Return original results in case of failure
-            return results
-
-
-    def generate_embedding(self, question:str, model_api_string="togethercomputer/m2-bert-80M-32k-retrieval"):
-        together_client = Together(api_key=settings.TOGETHER_API_KEY)
-        outputs = together_client.embeddings.create(
-            input=question,
-            model=model_api_string,
+        
+        context_prompt = (
+            "Create a single comprehensive documentation that covers all functionality "
+            f"across these files: {', '.join(file_list)}.\n{combined_text}"
         )
-        return [x.embedding for x in outputs.data]
+        
+        async for chunk in self._generate_documentation(
+                together=together,
+                context=context_prompt,
+                questions=questions,
+                previous_messages=[],
+                repo_info=repo_info,
+        ):
+            yield chunk
+    
+    
+    async def _generate_documentation(
+            self,
+            together: AsyncTogether,
+            context: str,
+            questions: List[str],
+            previous_messages: List[dict] | None = None,
+            repo_info: RepoResponseDTO | None = None,
+    ):
+        previous_messages = previous_messages or []
+        
+        if repo_info:
+            project_name = repo_info.repo_name
+            brief_description = repo_info.description
+            languages = repo_info.language
+        else:
+            project_name = "Unknown Project"
+            brief_description = "No description available"
+            languages = "Unknown Languages"
+        
+        system_prompt = """
+    You are an expert software technical writer.
+    When multiple questions are provided, answer EACH in its own subsection (Q1, Q2, ...),
+    grounded ONLY in the provided context. If context is insufficient for a question,
+    say so explicitly under that subsection.
+    Use markdown headings and lists.
+    """.strip()
+        
+        rendered_qs = "\n".join(f"{i+1}. {q}" for i, q in enumerate(questions))
+        
+        user_prompt = f"""
+    ## Project
+    - Repo Name: {project_name}
+    - Description: {brief_description}
+    - Languages: {languages}
 
+    ## Context (retrieved code chunks)
+    {context}
 
-
+    ## Questions (answer each separately)
+    {rendered_qs}
+    """.strip()
+        
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+        
+        try:
+            
+            stream = await together.chat.completions.create(
+                model=self.EMBEDDING_MODEL_2,
+                messages=messages,
+                max_tokens=1024,
+                temperature=0.7,
+                top_p=0.7,
+                top_k=40,
+                repetition_penalty=1,
+                stream=True,
+            )
+            
+            async for chunk in stream:
+                delta = getattr(chunk.choices[0].delta, "content", None)
+                if delta:
+                    if delta in ("json", "```"):
+                        delta = ""
+                    yield delta
+                await asyncio.sleep(0)
+        
+        except Exception as e:
+            logging.error(f"Async documentation generation failed: {e}")
+    
     async def _get_readme_content(self, user_id: str, repo_id: str) -> str:
         """Extract README content collection into separate method"""
         read_me_results = await self.code_chunks_store.get_repo_file_chunks(
@@ -193,147 +256,89 @@ class AnalyseService:
                 readme_content += content + "\n"
 
         return readme_content.strip()
-
-    async def _generate_documentation(self,
-            client,
-            context: str,
-            question: str,
-            previous_messages: List[dict] = None,
-            instructions: str = "",
-            repo_info:RepoResponseDTO=None,
+    
+    # Raranking related classes and helpers
+    
+    async def rerank_results_multi(
+            self,
+            results: List[Dict[str, Any]],
+            questions: List[str],
+            top_k: int = 10,
     ):
-        """Generate documentation using Together AI with streaming."""
-        if previous_messages is None:
-            previous_messages = []
-
-        """Generate a summary of the chat conversation."""
-        if repo_info:
-            project_name = repo_info.repo_name
-            brief_description = repo_info.description
-
-            languages = repo_info.language
-
-        else:
-            project_name = "Unknown Project"
-            brief_description = "No description available"
-            languages = "Unknown Languages"
-
-
-        system_prompt = """
-        You are an expert software technical writer and AI assistant tasked with generating comprehensive, professional, and clear documentation for a software project.
-
-        You will be given:
-        - The name of the repository.
-        - A brief project description.
-        - A list of programming languages used in the codebase.
-        - The contents of the README.md file.
-
-        Your job is to analyze this input and generate a well-structured set of documentation that includes the following sections:
-
-        ## 📘 Documentation Structure
-
-        1. **Project Overview**
-           - Summary of what the project does and its purpose.
-           - Key technologies or languages used.
-
-        2. **Features**
-           - Key features and functionality the software provides.
-
-        3. **Installation**
-           - Step-by-step instructions on how to install or set up the project.
-
-        4. **Usage**
-           - Usage instructions and examples.
-           - Include command-line examples or API calls if applicable.
-
-        5. **Architecture**
-           - High-level codebase overview.
-           - Mention core components, structure, or modules.
-           - Provide diagrams if the structure is inferable.
-
-        6. **Configuration**
-           - Environment variables, config files, or runtime settings.
-
-        7. **Development**
-           - Guide for contributing developers.
-           - Include setup, testing, linting, and other dev practices.
-
-        8. **API Documentation (if applicable)**
-           - Overview of key endpoints, classes, or functions.
-           - Mention Swagger/OpenAPI specs if available.
-
-        9. **License**
-           - Include the project license or inferred license from README.
-
-        10. **References**
-            - External links to related documentation, tools, or APIs.
-
-        ## 🧠 Style Guidelines
-
-        - Be concise, professional, and accurate.
-        - Do not copy the README verbatim unless content is clearly suitable.
-        - Use intelligent assumptions where content is missing and flag them with a `> NOTE:` annotation.
-        - Use markdown formatting: headings (##, ###), lists, and code blocks.
-        - Output should be usable directly in a `docs.md` or a documentation site.
-
-        ## Input Format (to be injected before generation):
-
-        - Repo Name: {repo_name}
-        - Description: {project_description}
-        - Languages: {languages_list}
-        - README Content: {readme_content}
-        - User instructions : {instructions}
-        """.format(
-            repo_name=project_name,
-            project_description=brief_description,
-            languages_list=languages,
-            readme_content=context,
-            instructions=instructions,
-        )
-        user_prompt = f"""
-
-
-        Below is the chat after that:
-        ---
-        <new_chats>
-         **Context:**
-            {context}
-
-            **Question:**
-            {question}
-        </new_chats>
-        ---
-
-        Please provide a summary of the chat till now including the historical summary of the chat.
-        """
-
-
-        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_prompt}]
-
-
-        if previous_messages:
-            messages = previous_messages + messages
-
+        if not results:
+            return []
+        
+        indexed_docs, doc_texts = self._prepare_indexed_docs(results)
+        if not doc_texts:
+            logging.warning("No valid documents found for reranking")
+            return results
+        
+        limit = min(len(doc_texts), max(top_k, 1))
+        
         try:
-            response = client.chat.completions.create(
-                model="meta-llama/Llama-3.3-70B-Instruct-Turbo",
-                messages=messages,
-                max_tokens=1024,
-                temperature=0.7,
-                top_p=0.7,
-                top_k=40,
-                repetition_penalty=1,
-                stream=True,
-            )
-            for chunk in response:
-                if chunk.choices[0].delta.content:
-
-                    chunk_text = chunk.choices[0].delta.content
-                    if chunk_text in ["json", "```"]:
-                        chunk_text = ""
-
-                    yield chunk_text
-            await asyncio.sleep(0)
-
+            filtered_qs = self._filter_questions(questions)
+            scores_in_doc_idx = await self._cohere_multi_rerank(filtered_qs, doc_texts, limit)
+            scores_by_orig_idx = {indexed_docs[i][0]: s for i, s in scores_in_doc_idx.items()}
+            return self._apply_scores_and_sort(results, scores_by_orig_idx, top_k)
         except Exception as e:
-            logging.error(f"API Error: {e}")
+            logging.error(f"Multi-question reranking failed: {e}")
+            return results
+    
+    
+    @staticmethod
+    def _prepare_indexed_docs(results: List[Dict[str, Any]]) -> Tuple[List[Tuple[int, str]], List[str]]:
+        """Return [(orig_idx, text)], and the parallel list of texts (doc_texts)."""
+        indexed = [(i, (r.get("content") or "").strip()) for i, r in enumerate(results)]
+        indexed = [(i, t) for i, t in indexed if t]
+        return indexed, [t for _, t in indexed]
+    
+    @staticmethod
+    def _filter_questions(questions: List[str]) -> List[str]:
+        return [q.strip() for q in (questions or []) if q and q.strip()]
+    
+    async def _cohere_multi_rerank(
+            self,
+            questions: List[str],
+            documents: List[str],
+            limit: int,
+    ) -> Dict[int, float]:
+        """Return {doc_index_in_documents: aggregated_score}."""
+        if not questions:
+            return {}
+        co = CohereAsyncClientV2(api_key=settings.COHERE_API_KEY)
+        
+        scores = [0.0] * len(documents)
+        for q in questions:
+            resp = await co.rerank(
+                query=q,
+                documents=documents,
+                top_n=limit,
+                model="rerank-v3.5",
+            )
+            for r in getattr(resp, "results", []):
+                idx = getattr(r, "index", -1)
+                if 0 <= idx < len(scores):
+                    scores[idx] += float(getattr(r, "relevance_score", 0.0))
+        
+        # return only docs that received any score
+        return {i: s for i, s in enumerate(scores) if s}
+    
+    @staticmethod
+    def _apply_scores_and_sort(
+            results: List[Dict[str, Any]],
+            scores_by_orig_idx: Dict[int, float],
+            top_k: int,
+    ) -> List[Dict[str, Any]]:
+        if not scores_by_orig_idx:
+            logging.warning("No results received rerank scores (multi)")
+            return results
+        
+        enriched = []
+        for i, item in enumerate(results):
+            if i in scores_by_orig_idx:
+                x = dict(item)
+                x["rerank_score"] = scores_by_orig_idx[i]
+                enriched.append(x)
+        
+        enriched.sort(key=lambda x: x.get("rerank_score", 0.0), reverse=True)
+        return enriched[:top_k]

@@ -54,11 +54,16 @@ class Settings(BaseSettings):
 
     DB_SCHEMA:str="public"
 
+
+    VECTOR_SIZE:int = 768
+
     QUEUE_POLLING_INTERVAL_SECONDS: int = 10
 
     TOGETHER_API_KEY: str = "test-clerk-key"
 
     COHERE_API_KEY:str = "test-cohere-key"
+
+    MAX_QUESTIONS:int = 5
 
     LOG_DIR:str = "/app/logs"
     BASE_DIR: ClassVar[str] = "app/repos"
