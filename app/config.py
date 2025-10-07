@@ -36,14 +36,14 @@ class Settings(BaseSettings):
     SUPABASE_HOST: str = "https://localhost"
     SUPABASE_USER: str = "postgres"
     SUPABASE_PASSWORD: str = "test"
+    SUPABASE_QUEUE_PORT:int = 5432
     SUPABASE_PORT: int = 6543
-    USE_POOLER:bool=True #True in case port is 6543 and False in case port is 5432
     SUPABASE_DB_NAME: str = "postgres"
 
     DB_MIN_CONNECTIONS: int = 5
     DB_MAX_CONNECTIONS: int = 25
 
-    DB_CONNECT_TIMEOUT: float = 10.0
+    DB_CONNECT_TIMEOUT: float = 30.0
     DB_COMMAND_TIMEOUT: float = 30.0
     DB_STATEMENT_TIMEOUT: int = 30000  # milliseconds
     DB_IDLE_SESSION_TIMEOUT: int = 300000  # 5 minutes in milliseconds
@@ -92,7 +92,7 @@ settings = Settings()
 # Initialize Supabase queue
 supabase_queue = SupabaseQueue(
     host=settings.SUPABASE_HOST,
-    port=5432,
+    port=settings.SUPABASE_QUEUE_PORT,
     user=settings.SUPABASE_USER,
     password=settings.SUPABASE_PASSWORD,
     db_name=settings.SUPABASE_DB_NAME,
@@ -117,8 +117,8 @@ def get_database_config() -> Dict[str, Any]:
             "application_name": "devdox-ai-agent"
         },
 
-        "timeout": 30,  # Connection establishment timeout (seconds)
-        "command_timeout": 60,  # Query execution timeout (seconds)
+        "timeout": settings.DB_CONNECT_TIMEOUT,  # Connection establishment timeout (seconds)
+        "command_timeout": settings.DB_COMMAND_TIMEOUT,  # Query execution timeout (seconds)
         "max_inactive_connection_lifetime": 3600,  # 1 hour - recycle old connections
         "max_queries": 50000,  # Queries before connection recycling
 
