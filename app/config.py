@@ -36,22 +36,35 @@ class Settings(BaseSettings):
     SUPABASE_HOST: str = "https://localhost"
     SUPABASE_USER: str = "postgres"
     SUPABASE_PASSWORD: str = "test"
-    SUPABASE_PORT: int = 5432
+    SUPABASE_PORT: int = 6543
+    USE_POOLER:bool=True #True in case port is 6543 and False in case port is 5432
     SUPABASE_DB_NAME: str = "postgres"
 
     DB_MIN_CONNECTIONS: int = 5
     DB_MAX_CONNECTIONS: int = 25
-    
+
+    DB_CONNECT_TIMEOUT: float = 10.0
+    DB_COMMAND_TIMEOUT: float = 30.0
+    DB_STATEMENT_TIMEOUT: int = 30000  # milliseconds
+    DB_IDLE_SESSION_TIMEOUT: int = 300000  # 5 minutes in milliseconds
+
+    # Connection lifecycle settings
+    DB_MAX_CACHED_STATEMENT_LIFETIME: int = 300  # 5 minutes
+    DB_MAX_CACHEABLE_STATEMENT_SIZE: int = 1024 * 15  # 15KB
+
+    DB_SCHEMA:str="public"
+
+
     VECTOR_SIZE:int = 768
-    
+
     QUEUE_POLLING_INTERVAL_SECONDS: int = 10
 
     TOGETHER_API_KEY: str = "test-clerk-key"
 
     COHERE_API_KEY:str = "test-cohere-key"
-    
+
     MAX_QUESTIONS:int = 5
-    
+
     LOG_DIR:str = "/app/logs"
     BASE_DIR: ClassVar[str] = "app/repos"
 
@@ -79,11 +92,11 @@ settings = Settings()
 # Initialize Supabase queue
 supabase_queue = SupabaseQueue(
     host=settings.SUPABASE_HOST,
-    port=settings.SUPABASE_PORT,
+    port=5432,
     user=settings.SUPABASE_USER,
     password=settings.SUPABASE_PASSWORD,
     db_name=settings.SUPABASE_DB_NAME,
-    table_name="testing",
+    table_name="testing"
 )
 
 
@@ -93,12 +106,26 @@ def get_database_config() -> Dict[str, Any]:
     Uses REST API connection when SUPABASE_REST_API is True, otherwise uses direct PostgreSQL.
     """
     base_credentials = {
-        "minsize": settings.DB_MIN_CONNECTIONS,
-        "maxsize": settings.DB_MAX_CONNECTIONS,
+        "min_size": settings.DB_MIN_CONNECTIONS,
+        "max_size": settings.DB_MAX_CONNECTIONS,
         "ssl": "require",
+        "statement_cache_size":0,
+        "server_settings": {
+            "search_path": settings.DB_SCHEMA,
+            "statement_timeout": str(settings.DB_STATEMENT_TIMEOUT),  # Prevent runaway queries
+            "idle_in_transaction_session_timeout": str(settings.DB_IDLE_SESSION_TIMEOUT),
+            "application_name": "devdox-ai-agent"
+        },
+
+        "timeout": 30,  # Connection establishment timeout (seconds)
+        "command_timeout": 60,  # Query execution timeout (seconds)
+        "max_inactive_connection_lifetime": 3600,  # 1 hour - recycle old connections
+        "max_queries": 50000,  # Queries before connection recycling
+
     }
     # Check if developer wants to use RESTAPI
     if settings.SUPABASE_REST_API:
+
 
         # Extract database connection info from Supabase URL
         # Supabase URL format: https://your-project.supabase.co
@@ -112,13 +139,16 @@ def get_database_config() -> Dict[str, Any]:
         )
         if not project_id:
             raise ValueError("Unable to extract project ID from Supabase URL")
+        pooler_host = f"db.{project_id}.supabase.co"
+
         credentials = {
             **base_credentials,
-            "host": project_id,  # Use project_id directly as host
-            "port": 5432,
+            "host": pooler_host,  # Use project_id directly as host
+            "port": settings.SUPABASE_PORT,
             "user": "postgres",
             "password": settings.SUPABASE_SECRET_KEY,
             "database": "postgres",
+
         }
 
     # Method 2: Supabase postgress sql
