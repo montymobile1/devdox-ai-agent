@@ -196,8 +196,15 @@ class LoadTestService:
                 user_id = str(user_claims.sub),
                 git_token = str(token_info.id),
                 git_provider = token_info.git_hosting,
-                auth_token = FernetEncryptionHelper().encrypt(
-                    user_claims.git_token ) if token_info.git_hosting.lower() == user_claims.git_provider.lower() else None,
+                auth_token=(
+                    FernetEncryptionHelper().encrypt(user_claims.git_token)
+                    if (
+                            token_info.git_hosting
+                            and user_claims.git_provider
+                            and token_info.git_hosting.lower() == user_claims.git_provider.lower()
+                    )
+                    else None
+                )
             )
             payload = {
                 "job_type": "load_locust",
