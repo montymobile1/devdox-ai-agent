@@ -22,6 +22,8 @@ from models_src.repositories.user import TortoiseUserStore as UserRepository
 
 logger = logging.getLogger(__name__)
 
+delete_folder_message = "delete_folder_path failed"
+
 class RepositoryValidationService:
     """Validates repository access and permissions"""
 
@@ -342,7 +344,7 @@ class LoadTestProcessor(BaseProcessor):
             error_msg = "Empty folder path provided"
             self.logger.error(error_msg)
             if trace:
-                trace.record_error(ValueError(error_msg), summary="delete_folder_path failed")
+                trace.record_error(ValueError(error_msg), summary=delete_folder_message)
             raise ValueError(error_msg)
 
         # Construct the full path to the topmost folder
@@ -355,7 +357,7 @@ class LoadTestProcessor(BaseProcessor):
             error_msg = f"Cannot delete base directory: {self.base_dir}"
             self.logger.error(error_msg)
             if trace:
-                trace.record_error(ValueError(error_msg), summary="delete_folder_path failed")
+                trace.record_error(ValueError(error_msg), summary=delete_folder_message)
             raise ValueError(error_msg)
 
         # Safety check: ensure the path is within base_dir
@@ -365,7 +367,7 @@ class LoadTestProcessor(BaseProcessor):
             error_msg = f"Path {full_path} is outside base directory {self.base_dir}"
             self.logger.error(error_msg)
             if trace:
-                trace.record_error(ValueError(error_msg), summary="delete_folder_path failed")
+                trace.record_error(ValueError(error_msg), summary=delete_folder_message)
             raise ValueError(error_msg)
 
         try:
@@ -381,7 +383,7 @@ class LoadTestProcessor(BaseProcessor):
         except OSError as e:
             self.logger.exception(f"Failed to delete folder {full_path}: {e}")
             if trace:
-                trace.record_error(e, summary="delete_folder_path failed")
+                trace.record_error(e, summary=delete_folder_message)
             raise
 
     async def prepare_repository(
