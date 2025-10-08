@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 
 class LoadTestConfig:
     DEFAULT_TEST_TYPE = "locust"
-    DEFAULT_BRANCH_NAME = "feature/load-tests"
+    DEFAULT_BRANCH_NAME = "feature-load-tests"
     DEFAULT_COMMIT_MESSAGE_TEMPLATE = "feat: Add load tests for {repo_name}"
     PROCESSING_TIMEOUT_SECONDS = 300
 
