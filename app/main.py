@@ -44,32 +44,41 @@ async def lifespan(app: FastAPI):
 
 
 
+
             logger.info("Database initialized and connection verified")
             logger.info("Tortoise._inited: " + str(Tortoise._inited))
-            worker_service = QueueConsumer(
-                queue=supabase_queue,
-                workers=getattr(settings, 'CONSUMER_WORKERS', 2),
-                poll_interval=getattr(settings, 'CONSUMER_POLL_INTERVAL', 7.0),
-                max_processing_time=getattr(settings, 'CONSUMER_MAX_PROCESSING_TIME', 1800)
-            )
-            _ = asyncio.create_task(worker_service.start())
-            logger.info("Consumer started as background task")
-            yield
-    finally:
-        logger.info("Application shutdown initiated")
 
-        if worker_service and worker_service.running:
-            await worker_service.stop()
-            logger.info("Consumer stopped")
+    except Exception as e:
+            logger.error(f"Database connection  failed: {e}")
 
+
+    worker_service = QueueConsumer(
+        queue=supabase_queue,
+        workers=getattr(settings, 'CONSUMER_WORKERS', 2),
+        poll_interval=getattr(settings, 'CONSUMER_POLL_INTERVAL', 7.0),
+        max_processing_time=getattr(settings, 'CONSUMER_MAX_PROCESSING_TIME', 1800)
+    )
+
+    _ = asyncio.create_task(worker_service.start())
+    logger.info("Consumer started as background task")
+    await asyncio.sleep(1)
+    logger.info("Application startup complete")
+    yield
+
+    # Shutdown
+    logger.info("Application stop initiated")
+    if worker_service and worker_service.running:
+        logger.info("Stopping consumer...")
+        await worker_service.stop()
+        logger.info("Consumer stopped")
+
+
+
+    if TORTOISE_ORM:
         await Tortoise.close_connections()
         logger.info("Database connections closed")
 
-
-
-
-
-
+    logger.info("Application shutdown complete")
 
 
 # Initialize FastAPI app
