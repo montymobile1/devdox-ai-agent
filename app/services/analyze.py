@@ -9,6 +9,9 @@ from models_src.repositories.code_chunks import TortoiseCodeChunksStore as CodeC
 from models_src.repositories.repo import TortoiseRepoStore as RepoStore
 from cohere import AsyncClientV2 as CohereAsyncClientV2
 
+from app.infrastructure.qna.formatters.qna_formatter_text import format_qna_text
+from app.infrastructure.qna.qna_generator import generate_project_qna
+from app.infrastructure.qna.qna_models import ProjectQnAPackage
 from app.utils.auth import UserClaims
 from app.config import settings
 
@@ -50,68 +53,81 @@ class AnalyseService:
         if not repo_info:
             yield "No relevant repo found."
             return
-
-        # 2) Clean questions (keep separate)
-        questions = [q.strip() for q in (questions or []) if q and q.strip()]
-        if not questions:
-            yield "No questions provided."
-            return
-
-        # 3) Batched, async embeddings
-        try:
-            q_vecs = await self._generate_embeddings_batch(
-                together=async_together_client, questions=questions, model_api_string=self.EMBEDDING_MODEL_1
-            )
-        except Exception:
-            logging.exception("Failed to generate embeddings batch")
-            yield "Failed to generate embeddings for questions."
-            return
-
-        # Dimension guard
-        # Basic safety check: ensure we got a VECTOR_SIZE-dim vector (what our DB expects).
-        emb_dim = len(q_vecs[0])
-        if any(len(v) != emb_dim for v in q_vecs):
-            yield "Embedding dimensions inconsistent, aborting."
-            return
-
-        if emb_dim != settings.VECTOR_SIZE:
-            yield f"Embedding dimension mismatch: DB={settings.VECTOR_SIZE}, model={emb_dim}."
-            return
-
-        # 4) ONE fused SQL query (no N+1)
-        results = await self.code_chunks_store.get_user_repo_chunks_multi(
-            user_id=user_claims.sub,
-            repo_id=repo_info.id,
-            query_embeddings=q_vecs,
-            emb_dim=emb_dim,
-            limit=self.TOTAL_K,
-        )
-        if not results:
-            yield "No code chunks found."
-            return
-
-        # 5) README preface: If there’s README content for this repo, stream it first as helpful context.
-        readme_content = await self._get_readme_content(user_claims.sub, str(repo_info.id))
-        if readme_content:
-            yield f"README/Setup information:\n{readme_content}"
-
-        # 6) Rerank across questions (sum per-question relevance)
-        # Improve ordering using a cross-encoder reranker (reads the text, not just vector math).
-        # This looks at the documents versus EACH question and adds up relevance,
-        # so items that answer multiple questions move higher.
-        reranked = await self.rerank_results_multi(results, questions, top_k=self.TOTAL_K)
-        if not reranked:
-            yield json.dumps({"data": "No relevant reranked results found."})
-            return
-
-        # 7) Generate final answer (answers each question separately)
-        # Ask the LLM to write the answer using those top chunks as context.
-        # We pass the questions list so the model answers “Q1, Q2, …” in separate sections.
-        async for chunk in self._process_reranked_results(
-            together=async_together_client, reranked_results=reranked, questions=questions, repo_info=repo_info
-        ):
-            yield chunk
+        
+        if questions:
+            # 2) Clean questions (keep separate)
+            questions = [q.strip() for q in (questions or []) if q and q.strip()]
+            if not questions:
+                yield "No questions provided."
+                return
     
+            # 3) Batched, async embeddings
+            try:
+                q_vecs = await self._generate_embeddings_batch(
+                    together=async_together_client, questions=questions, model_api_string=self.EMBEDDING_MODEL_1
+                )
+            except Exception:
+                logging.exception("Failed to generate embeddings batch")
+                yield "Failed to generate embeddings for questions."
+                return
+    
+            # Dimension guard
+            # Basic safety check: ensure we got a VECTOR_SIZE-dim vector (what our DB expects).
+            emb_dim = len(q_vecs[0])
+            if any(len(v) != emb_dim for v in q_vecs):
+                yield "Embedding dimensions inconsistent, aborting."
+                return
+    
+            if emb_dim != settings.VECTOR_SIZE:
+                yield f"Embedding dimension mismatch: DB={settings.VECTOR_SIZE}, model={emb_dim}."
+                return
+    
+            # 4) ONE fused SQL query (no N+1)
+            results = await self.code_chunks_store.get_user_repo_chunks_multi(
+                user_id=user_claims.sub,
+                repo_id=repo_info.id,
+                query_embeddings=q_vecs,
+                emb_dim=emb_dim,
+                limit=self.TOTAL_K,
+            )
+            if not results:
+                yield "No code chunks found."
+                return
+    
+            # 5) README preface: If there’s README content for this repo, stream it first as helpful context.
+            readme_content = await self._get_readme_content(user_claims.sub, str(repo_info.id))
+            if readme_content:
+                yield f"README/Setup information:\n{readme_content}"
+    
+            # 6) Rerank across questions (sum per-question relevance)
+            # Improve ordering using a cross-encoder reranker (reads the text, not just vector math).
+            # This looks at the documents versus EACH question and adds up relevance,
+            # so items that answer multiple questions move higher.
+            reranked = await self.rerank_results_multi(results, questions, top_k=self.TOTAL_K)
+            if not reranked:
+                yield json.dumps({"data": "No relevant reranked results found."})
+                return
+    
+            # 7) Generate final answer (answers each question separately)
+            # Ask the LLM to write the answer using those top chunks as context.
+            # We pass the questions list so the model answers “Q1, Q2, …” in separate sections.
+            async for chunk in self._process_reranked_results(
+                together=async_together_client, reranked_results=reranked, questions=questions, repo_info=repo_info
+            ):
+                yield chunk
+        else:
+            # GENERATE Q&A SUMMARY In case no questions are passed
+            qna_pkg:ProjectQnAPackage = await generate_project_qna(
+                id_for_repo=str(repo_info.id),
+                project_name=repo_info.repo_name,
+                repo_url=repo_info.html_url,
+                repo_system_reference=repo_info.repo_system_reference,
+                together_client=async_together_client
+            )
+            
+            yield format_qna_text(qna_pkg, show_debug=True, ascii_bars=True)
+
+
     async def _generate_embeddings_batch(
             self,
             together: AsyncTogether,
