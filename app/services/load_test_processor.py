@@ -231,6 +231,10 @@ class LoadTestProcessor(BaseProcessor):
                     trace=trace,
                     tracker=tracker,
                 )
+                # Delete the directory after upload
+                await self.delete_folder_path(directory_test, trace=trace)
+
+
 
             end_time = datetime.now(UTC)
             processing_time = (end_time - start_time).total_seconds()
@@ -299,6 +303,87 @@ class LoadTestProcessor(BaseProcessor):
             "success_rate": 0.98
         }, None
 
+    async def delete_folder_path(
+            self,
+            folder_path: str | Path,
+            trace: JobTraceMetaData | None = None
+    ) -> bool:
+        """
+        Delete a folder and all its contents asynchronously while preserving base_dir.
+
+        Args:
+            folder_path: Relative path from base_dir to delete (e.g., "test1" or "test1/test2")
+            trace: Optional job trace metadata for error tracking
+            tracker: Optional job tracker
+
+        Returns:
+            bool: True if deletion was successful, False if folder didn't exist
+
+        Raises:
+            OSError: If deletion fails
+            ValueError: If attempting to delete base_dir itself
+
+        Examples:
+            # Delete app/repos/test1
+            await delete_folder_path("test1")
+
+            # Delete app/repos/test1/test2 (deletes test1 and test2)
+            await delete_folder_path("test1/test2")
+
+            # Using Path object
+            await delete_folder_path(Path("test1/test2"))
+        """
+        # Convert to Path if string
+        rel_path = Path(folder_path) if isinstance(folder_path, str) else folder_path
+
+        # Get the topmost folder to delete (first part of the path)
+        parts = rel_path.parts
+        if not parts:
+            error_msg = "Empty folder path provided"
+            self.logger.error(error_msg)
+            if trace:
+                trace.record_error(ValueError(error_msg), summary="delete_folder_path failed")
+            raise ValueError(error_msg)
+
+        # Construct the full path to the topmost folder
+        topmost_folder = parts[0]
+        full_path = self.base_dir / topmost_folder
+        print("full_path", full_path)
+
+        # Safety check: ensure we're not trying to delete base_dir itself
+        if full_path.resolve() == self.base_dir.resolve():
+            error_msg = f"Cannot delete base directory: {self.base_dir}"
+            self.logger.error(error_msg)
+            if trace:
+                trace.record_error(ValueError(error_msg), summary="delete_folder_path failed")
+            raise ValueError(error_msg)
+
+        # Safety check: ensure the path is within base_dir
+        try:
+            full_path.resolve().relative_to(self.base_dir.resolve())
+        except ValueError:
+            error_msg = f"Path {full_path} is outside base directory {self.base_dir}"
+            self.logger.error(error_msg)
+            if trace:
+                trace.record_error(ValueError(error_msg), summary="delete_folder_path failed")
+            raise ValueError(error_msg)
+
+        try:
+            if full_path.exists():
+                self.logger.info(f"Deleting folder: {full_path}")
+                await asyncio.to_thread(shutil.rmtree, full_path)
+                self.logger.info(f"Successfully deleted: {full_path}")
+                return True
+            else:
+                self.logger.debug(f"Folder does not exist, skipping deletion: {full_path}")
+                return False
+
+        except OSError as e:
+            self.logger.exception(f"Failed to delete folder {full_path}: {e}")
+            if trace:
+                trace.record_error(e, summary="delete_folder_path failed")
+            raise
+
     async def prepare_repository(
         self,
         repo_name: str,
@@ -308,11 +393,11 @@ class LoadTestProcessor(BaseProcessor):
         repo_path = self.base_dir / repo_name
         try:
 
-                    if repo_path.exists():
-                            await asyncio.to_thread(shutil.rmtree, repo_path)
-                    repo_path.mkdir(parents=True, exist_ok=True)
+            if repo_path.exists():
+                await asyncio.to_thread(shutil.rmtree, repo_path)
+            repo_path.mkdir(parents=True, exist_ok=True)
 
-                    return repo_path
+            return repo_path
         except OSError as e:
             self.logger.exception(f"Failed to prepare repository {repo_name}: {e}")
             if trace:
@@ -431,6 +516,7 @@ class LoadTestProcessor(BaseProcessor):
         # reflect extra metadata into trace if you want
         if trace:
             trace.add_metadata(repository_branch=None, repository_html_url=None, user_email= getattr(user_info, "email", None))
+            #trace.add_metadata(user_email= getattr(user_info, "email", None))
 
         try:
             # Track: auth
@@ -464,7 +550,10 @@ class LoadTestProcessor(BaseProcessor):
                     repo_info=repo_info,
                     git_provider=git_provider,
                     files=files,
-                    repo_id=repo_id
+                    repo_id=repo_id,
+                    trace=trace,
+                    tracker=tracker,
+
                 )
         except Exception as e:
             self.logger.error(f"Repository creation failed: {e}", exc_info=True)
@@ -587,9 +676,13 @@ class LoadTestProcessor(BaseProcessor):
 
             # Optionally update trace with repo page / branch
             if trace:
+                repository_html_url = (
+                        getattr(created_repo, "html_url", None) or  # GitHub
+                        getattr(created_repo, "web_url", None)  # GitLab
+                )
                 trace.add_metadata(
                     repository_branch=branch_name,
-                    repository_html_url=getattr(created_repo, "html_url", None)
+                    repository_html_url=repository_html_url
                 )
 
         except Exception:

@@ -244,7 +244,7 @@ class QueueConsumer:
                         "worker_id": worker_id
                     }
                 )
-                
+                print("send email")
                 await self._notify_success(job_tracer=trace)
                 
             else:
