@@ -1,6 +1,6 @@
 SUCCESS — {{ job_type or 'Operation' }}
 
-Repository Analysis Operation completed successfully.
+Repository Creation Operation completed successfully.
 
 Repository: {% if repository_html_url %}{{ repository_html_url }}{% else %}-{% endif %}
 Branch: {% if repository_branch %}{{ repository_branch }}{% else %}-{% endif %}
