@@ -60,6 +60,86 @@ cp .env.example .env
 poetry run uvicorn app.main:app --reload
 ```
 
+## Claude MCP Integration
+
+The DevDox AI Agent can be integrated with Claude Desktop or other MCP clients to provide AI-powered repository operations directly from your Claude interface.
+
+### Development Environment Setup
+
+Add the following configuration to your Claude Desktop config file (typically located at `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+
+```json
+{
+  "mcpServers": {
+    "devdox-mcp": {
+      "command": "uvx",
+      "args": [
+        "mcp-proxy",
+        "--transport",
+        "streamablehttp",
+        "--headers",
+        "API-KEY",
+        "test",
+        "http://localhost:8000/my-http"
+      ]
+    }
+  }
+}
+```
+
+### Production Environment Setup
+
+For production deployments, use the remote MCP configuration:
+
+```json
+{
+  "mcpServers": {
+    "devdox-mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-remote",
+        "https://api.yourserver.com/my-http",
+        "--header",
+        "API-KEY: ${API_KEY}"
+      ],
+      "env": {
+        "API_KEY": "production-key"
+      }
+    }
+  }
+}
+```
+
+### Git Authentication Headers
+
+The MCP integration supports dynamic Git authentication through custom headers:
+
+#### X-Git-Token Header
+Provides the Git platform access token for API operations:
+```
+X-Git-Token: your_github_or_gitlab_token
+```
+
+#### X-Git-Provider Header
+Specifies the Git platform provider:
+```
+X-Git-Provider: github
+# or
+X-Git-Provider: gitlab
+```
+
+### Authentication Priority
+
+When both headers are provided and the `X-Git-Provider` matches the original repository's provider:
+
+1. **Header-based credentials take priority** over database-stored credentials
+2. This allows for:
+   - User-specific token usage
+   - Temporary token overrides
+   - Enhanced security through per-request authentication
+   - Testing with different credentials without database modifications
+
 ## API Documentation
 
 When running the application, the API documentation is automatically available at:
