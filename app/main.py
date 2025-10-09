@@ -117,6 +117,8 @@ mcp = FastApiMCP(app,
                  include_operations = ["analyze_code", "load_tests"]
                  )
 mcp.mount()
+# Streamable HTTP (for future-proofing)
+mcp.mount_http(api_router, mount_path="/my-http")
 
 
 
