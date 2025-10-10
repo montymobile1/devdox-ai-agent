@@ -54,36 +54,34 @@ class QnAService:
 				error_message="No relevant repo found."
 			)
 
-		
-		async_together_client = AsyncTogether(api_key=settings.TOGETHER_API_KEY)
-		
-		qna_pkg:ProjectQnAPackage = await generate_project_qna(
-			id_for_repo=str(repo_info.id),
-			project_name=repo_info.repo_name,
-			repo_url=repo_info.html_url,
-			repo_system_reference=repo_info.repo_system_reference,
-			together_client=async_together_client
-		)
-		
-		if not qna_pkg:
-			return GetAnswersResponse(
-				is_error=True,
-				error_message="No Answers were generated"
+		async with AsyncTogether(api_key=settings.TOGETHER_API_KEY) as async_together_client:
+			qna_pkg:ProjectQnAPackage = await generate_project_qna(
+				id_for_repo=str(repo_info.id),
+				project_name=repo_info.repo_name,
+				repo_url=repo_info.html_url,
+				repo_system_reference=repo_info.repo_system_reference,
+				together_client=async_together_client
 			)
-		
-		formatted_qna = format_qna_text(qna_pkg, show_debug=False, ascii_bars=True)
-
-		try:
-			await self.send_qna_summary_email(qna_pkg= qna_pkg, to_email=user_claims.email)
-		except Exception:
-			logger.error("Question and Answer Summary Email send failed")
-			raise
-
-		return GetAnswersResponse(
-			is_error=False,
-			qna_pkg=qna_pkg,
-			format_qna_text=formatted_qna
-		)
+			
+			if not qna_pkg:
+				return GetAnswersResponse(
+					is_error=True,
+					error_message="No Answers were generated"
+				)
+			
+			formatted_qna = format_qna_text(qna_pkg, show_debug=False, ascii_bars=True)
+	
+			try:
+				await self.send_qna_summary_email(qna_pkg= qna_pkg, to_email=user_claims.email)
+			except Exception:
+				logger.error("Question and Answer Summary Email send failed")
+				raise
+	
+			return GetAnswersResponse(
+				is_error=False,
+				qna_pkg=qna_pkg,
+				format_qna_text=formatted_qna
+			)
 	
 	async def send_qna_summary_email(self, to_email: EmailStr, qna_pkg: ProjectQnAPackage):
 		
