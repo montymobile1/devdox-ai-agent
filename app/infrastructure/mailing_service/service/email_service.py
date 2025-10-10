@@ -129,7 +129,8 @@ class EmailDispatcher(IEmailDispatcher):
             self,
             to: List[EmailStr],
             template: Template,
-            context: BaseContextShape | dict | None = None,
+            context: BaseContextShape | None = None,
+            base_context_shape_config: dict[str, str] | None = None,
             subject: Optional[str] = None,
             cc: Optional[List[EmailStr]] = None,
             bcc: Optional[List[EmailStr]] = None,
@@ -146,11 +147,10 @@ class EmailDispatcher(IEmailDispatcher):
         template_meta = self._template_resolver.get_template_meta_by_name(template)
         transformed_subject = self._options.prefix_subject(subject if subject else template_meta.subject)
         
-        if not isinstance(context, dict):
-            required_shape = template_meta.context_shape
-            if required_shape is not None:
-                    if (context is None) or (not isinstance(context, required_shape)):
-                        raise MailTemplateError(exception_constants.INVALID_TEMPLATE_CONTEXT)
+        required_shape = template_meta.context_shape
+        if required_shape is not None:
+                if (context is None) or (not isinstance(context, required_shape)):
+                    raise MailTemplateError(exception_constants.INVALID_TEMPLATE_CONTEXT)
         
         
         email_model = OutgoingTemplatedHTMLEmail(
@@ -164,9 +164,10 @@ class EmailDispatcher(IEmailDispatcher):
             plain_template_fallback=template_meta.plain_template,
         )
         
-        if isinstance(context, dict):
-            email_model.template_context = context
-        elif context and template_meta.context_shape:
-            email_model.template_context = context.model_dump()
+        if context and template_meta.context_shape:
+            if base_context_shape_config:
+                email_model.template_context = context.model_dump(**base_context_shape_config)
+            else:
+                email_model.template_context = context.model_dump()
         
         return await self._client.send_templated_html_email(email_model)
