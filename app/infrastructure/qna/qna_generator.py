@@ -496,7 +496,7 @@ async def generate_project_qna(
     if batch_size <= 0:
         raise ValueError("batch_size must be >= 1")
     
-    questions = questions or DEFAULT_QUESTIONS
+    questions = sanitize_custom_questions_shape(questions) or DEFAULT_QUESTIONS
     
     analysis_text = repo_system_reference.strip() if repo_system_reference else ""
     
