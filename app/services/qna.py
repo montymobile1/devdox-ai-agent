@@ -1,0 +1,74 @@
+from typing import Annotated
+
+from fastapi import Depends
+from models_src.repositories.repo import TortoiseRepoStore
+from pydantic import BaseModel
+from together import AsyncTogether
+
+from app.config import settings
+from app.infrastructure.qna.formatters.qna_formatter_text import format_qna_text
+from app.infrastructure.qna.qna_generator import generate_project_qna
+from app.infrastructure.qna.qna_models import ProjectQnAPackage
+from app.utils.auth import UserClaims
+
+class GetAnswersResponse(BaseModel):
+	is_error: bool = False
+	error_message: str | None = None
+	qna_pkg: ProjectQnAPackage | None = None
+	format_qna_text: str | None = None
+
+class QnAService:
+	
+	def __init__(self, repo_store: TortoiseRepoStore):
+		
+		self.repo_store = repo_store
+	
+	@classmethod
+	def with_dependency(
+			cls,
+			repo_store: Annotated[TortoiseRepoStore, Depends()],
+	) -> "QnAService":
+		return cls(repo_store)
+	
+	async def get_answers(
+			self,
+			user_claims: UserClaims,
+			relative_path: str
+	) -> GetAnswersResponse:
+		
+		# Figure out which repo we’re supposed to analyze for this user + path.
+		# If we can’t find that repo, exit early
+		repo_info = await self.repo_store.find_by_user_and_path(
+			user_id=user_claims.sub, relative_path=relative_path
+		)
+		
+		if not repo_info:
+			return GetAnswersResponse(
+				is_error=True,
+				error_message="No relevant repo found."
+			)
+
+		
+		async_together_client = AsyncTogether(api_key=settings.TOGETHER_API_KEY)
+		
+		qna_pkg:ProjectQnAPackage = await generate_project_qna(
+			id_for_repo=str(repo_info.id),
+			project_name=repo_info.repo_name,
+			repo_url=repo_info.html_url,
+			repo_system_reference=repo_info.repo_system_reference,
+			together_client=async_together_client
+		)
+		
+		if not qna_pkg:
+			return GetAnswersResponse(
+				is_error=True,
+				error_message="No Answers were generated"
+			)
+		
+		formatted_qna = format_qna_text(qna_pkg, show_debug=False, ascii_bars=True)
+		
+		return GetAnswersResponse(
+			is_error=False,
+			qna_pkg=qna_pkg,
+			format_qna_text=formatted_qna
+		)

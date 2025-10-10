@@ -20,8 +20,8 @@ def format_qna_text(
     show_meta: bool = True,
     show_toc: bool = True,
     show_debug: bool = False,      # append raw prompt/response at the end
-    include_confidence_bar: bool = True,
-    include_confidence_stars: bool = True,
+    include_confidence_bar: bool = False,
+    include_confidence_stars: bool = False,
     ascii_bars: bool = False,      # use "#"/"." instead of unicode blocks
 ) -> str:
     """
