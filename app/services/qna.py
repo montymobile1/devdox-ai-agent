@@ -70,12 +70,15 @@ class QnAService:
 				)
 			
 			formatted_qna = format_qna_text(qna_pkg, show_debug=False, ascii_bars=True)
-	
-			try:
-				await self.send_qna_summary_email(qna_pkg= qna_pkg, to_email=user_claims.email)
-			except Exception:
-				logger.error("Question and Answer Summary Email send failed")
-				raise
+			
+			if user_claims.email:
+				try:
+					await self.send_qna_summary_email(qna_pkg= qna_pkg, to_email=user_claims.email)
+				except Exception:
+					logger.error("Question and Answer Summary Email send failed")
+					raise
+			else:
+				logger.info("Skipping QnA email: no user email on claims.")
 	
 			return GetAnswersResponse(
 				is_error=False,
