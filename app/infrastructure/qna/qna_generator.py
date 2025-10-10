@@ -45,7 +45,7 @@ analysis and **no** email code. It’s a single responsibility “Q&A packer”.
 """
 import json
 import logging
-from typing import Any, Dict, List, Tuple, Optional
+from typing import Any, Dict, List, Sequence, Tuple, Optional, Union
 
 from together import AsyncTogether
 
@@ -358,34 +358,84 @@ async def _ask_batch(
     return pairs, prompt, raw_audit
 
 
-def sanitize_custom_questions_shape(questions: List[Tuple[str, str]] | List[str]) -> Optional[List[Tuple[str, str]]]:
-    
-    def tupelize_questions(question: List[str] | str) -> List[Tuple[str, str]]:
-        tupelized_questions_list = []
-        for index, q in enumerate(question):
-            tupelized_questions_list.append((str(index + 1),q))
-        
-        return tupelized_questions_list
-    
-    if questions is None:
+QuestionTuple = Tuple[str, str]
+QuestionsIn = Union[List[QuestionTuple], List[str], str, None]
+
+def _tupleize(seq: Sequence[str]) -> List[QuestionTuple]:
+    if len(seq) == 0:
+        raise ValueError("Questions list is empty.")
+    out: List[QuestionTuple] = []
+    for idx, raw in enumerate(seq, start=1):
+        if not isinstance(raw, str):
+            raise TypeError(f"Question at position {idx} must be a str, got {type(raw).__name__}.")
+        q = raw.strip()
+        if not q:
+            raise ValueError(f"Question at position {idx} is empty/whitespace.")
+        out.append((str(idx), q))
+    return out
+
+def handle_list_of_tuples(questions:List[QuestionTuple]) -> List[QuestionTuple]:
+    out: List[QuestionTuple] = []
+    for pos, item in enumerate(questions, start=1):
+        if len(item) != 2:
+            raise TypeError(
+                f"Item at position {pos} must be a 2-tuple (id, question); got length {len(item)}."
+            )
+        qid, qtext = item
+        if not isinstance(qtext, str):
+            raise TypeError(
+                f"Question text at position {pos} must be a str, got {type(qtext).__name__}."
+            )
+        qtext = qtext.strip()
+        if not qtext:
+            raise ValueError(f"Question text at position {pos} is empty/whitespace.")
+        out.append((str(qid), qtext))  # coerce id to str
+    return out
+
+def sanitize_custom_questions_shape(questions: QuestionsIn) -> Optional[List[QuestionTuple]]:
+    """
+    Normalize questions into a list of (id, question) tuples with 1-based string ids.
+
+    Accepts:
+      - None                           -> None
+      - "single question"              -> [("1", "single question")]
+      - ["q1", "q2"]                   -> [("1", "q1"), ("2", "q2")]
+      - [("id1", "q1"), ("id2", "q2")] -> validated, ids coerced to str
+
+    Raises:
+      TypeError  for wrong container/item types or mixed lists
+      ValueError for empty strings/whitespace-only items or empty list
+    """
+    if questions is None or (isinstance(questions, list) and len(questions) == 0):
         return None
-    
+
+    # Single string case
     if isinstance(questions, str):
-        
-        if questions.strip() is None:
-            raise RuntimeError("Passed an empty question")
-        
-        return tupelize_questions([questions])
-    
-    elif isinstance(questions, list) and all(isinstance(item, tuple) for item in questions):
-        
-        
-        
-        
-        return questions
-    
-    else:
-        raise RuntimeError("Invalid Custom Question Type Passed")
+        q = questions.strip()
+        if not q:
+            raise ValueError("Passed an empty question.")
+        return [("1", q)]
+
+    # List cases
+    if isinstance(questions, list):
+        if len(questions) == 0:
+            raise ValueError("Questions list is empty.")
+
+        # Homogeneous list[str]
+        if all(isinstance(item, str) for item in questions):
+            return _tupleize(questions)  # enumerate 1..n
+
+        # Homogeneous list[tuple]
+        if all(isinstance(item, tuple) for item in questions):
+            return handle_list_of_tuples(questions=questions)
+
+        # Mixed list (e.g., some str and some tuple)
+        raise TypeError(
+            "Questions list must contain either all str items or all (id, str) tuples; mixed types are not allowed."
+        )
+
+    # Anything else
+    raise TypeError("Invalid type for 'questions'. Expected str, list[str], or list[tuple[str, str]].")
 
 
 
