@@ -1,0 +1,28 @@
+Project Q&A — {{ project.name }}
+{{ project.repo_url }}
+
+Generated: {{ meta.generated_at_iso }}{% if meta.model %} | Model: {{ meta.model }}{% endif %}{% if meta.prompt_version %} | Prompt v{{ meta.prompt_version }}{% endif %}
+
+{% set total = pairs|length %}
+{% set insuff = pairs|selectattr('insufficient_evidence')|list|length %}
+{% set avg = (pairs|map(attribute='confidence')|sum) / (total if total>0 else 1) %}
+Summary:
+- Questions: {{ total }}
+- Avg confidence: {{ (avg*100)|round(0) }}%
+- With insufficient evidence: {{ insuff }}
+
+{% for p in pairs -%}
+Q{{ loop.index }}: {{ p.question }}{% if p.insufficient_evidence %} [Insufficient evidence]{% endif %}{% if p.answer.startswith('Inferred:') %} [Inferred]{% endif %}
+Answer: {{ p.answer }}
+Confidence: {{ (p.confidence*100)|round(0) }}%
+{% if p.evidence_snippets and p.evidence_snippets|length > 0 -%}
+Evidence (from analysis):
+{%- for s in p.evidence_snippets %}
+- "{{ s }}"
+{%- endfor %}
+{% endif -%}
+---
+{% endfor -%}
+
+Open repository: {{ project.repo_url }}
+Note: This summary may include model-generated inferences.
