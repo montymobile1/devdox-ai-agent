@@ -126,5 +126,6 @@ class QnAService:
 		await email_dispatcher.send_templated_html(
 			to=[to_email],
 			template=Template.PROJECT_QNA_SUMMARY,
-			context=qa_report_context.model_dump(by_alias=True),
+			context=qa_report_context,
+			base_context_shape_config={"by_alias": True}
 		)
