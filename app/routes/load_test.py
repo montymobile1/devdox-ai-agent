@@ -5,6 +5,7 @@ from app.schemas.load_test import (LoadTestRequest, LoadTestResult)
 from app.services.load_test import (
     LoadTestService
 )
+from app.utils.rate_limiting import limiter, RateLimits
 from app.utils.auth import get_mcp_aware_user_context, UserClaims
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ router = APIRouter()
     description="Load tests using locust repo based on output path",
     operation_id="load_tests"
 )
+@limiter.limit(RateLimits.LOAD_TEST)
 async def load_tests(
 
         user_claims: Annotated[UserClaims, Depends(get_mcp_aware_user_context)],
