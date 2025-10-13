@@ -27,5 +27,5 @@ FAILED_GENERATE_API_KEY_RETRIES_LOG_MESSAGE = (
     "Failed to generate a unique API key after {attempts} attempts"
 )
 
-REPO_ANALYSIS_NOT_COMPLETED = "Repository Analysis have not been completed yet"
+REPO_ANALYSIS_NOT_COMPLETED = "Repository Analysis has not been completed yet"
 REPO_ANALYSIS_FAILED = "Repository Analysis has failed, cannot proceed"
