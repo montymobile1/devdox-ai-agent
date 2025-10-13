@@ -195,7 +195,7 @@ def _parse_qna_json_response(raw: str, questions: List[Tuple[str, str]]) -> List
     - Truncates/normalizes `evidence_snippets` to max 2 items.
     """
     raw = _strip_code_fences(raw)
-    by_id: Dict[str, str] = {qid: q for qid, q in questions}
+    by_id: Dict[str, str] = dict(questions)
 
     try:
         data = json.loads(raw)
