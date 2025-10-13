@@ -29,10 +29,7 @@ async def answer(
         repo_alias_name=request.repo_alias_name
     )
     
-    if get_answers_response.is_error:
-        full_response = get_answers_response.error_message
-    else:
-        full_response = get_answers_response.format_qna_text
+    full_response = get_answers_response.format_qna_text
     
     return {
         "content": [

@@ -8,6 +8,7 @@ TOKEN_MISSING = "Invalid Token or missing"
 TOKEN_NOT_FOUND = "Token Not Found"
 GENERIC_RESOURCE_NOT_FOUND = "Resource Not Found"
 USER_RESOURCE_NOT_FOUND = "User Not Found"
+REPOSITORY_NOT_FOUND = "Repository Not Found"
 GIT_LABEL_TOKEN_RESOURCE_NOT_FOUND = "Git Label Token Not Found"
 GENERIC_ALREADY_EXIST = "Already Exists"
 REPOSITORY_ALREADY_EXISTS = "Repository Already Exists"
@@ -25,3 +26,6 @@ UNIQUE_API_KEY_GENERATION_FAILED = (
 FAILED_GENERATE_API_KEY_RETRIES_LOG_MESSAGE = (
     "Failed to generate a unique API key after {attempts} attempts"
 )
+
+REPO_ANALYSIS_NOT_COMPLETED = "Repository Analysis have not been completed yet"
+REPO_ANALYSIS_FAILED = "Repository Analysis has failed, cannot proceed"

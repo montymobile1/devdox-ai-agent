@@ -6,14 +6,15 @@ from pydantic import BaseModel
 from together import AsyncTogether
 
 from app.config import settings
+from app.exceptions.custom_exceptions import QnAGenerationFailed, RepoAnalysNotCompleted, ResourceNotFound
+from app.exceptions.exception_constants import REPO_ANALYSIS_FAILED, REPOSITORY_NOT_FOUND
 from app.infrastructure.qna.formatters.qna_formatter_text import format_qna_text
 from app.infrastructure.qna.qna_generator import generate_project_qna
 from app.infrastructure.qna.qna_models import ProjectQnAPackage
+from app.schemas.repo import RepoStatus
 from app.utils.auth import UserClaims
 
 class GetAnswersResponse(BaseModel):
-	is_error: bool = False
-	error_message: str | None = None
 	qna_pkg: ProjectQnAPackage | None = None
 	format_qna_text: str | None = None
 
@@ -43,11 +44,13 @@ class QnAService:
 		)
 		
 		if not repo_info:
-			return GetAnswersResponse(
-				is_error=True,
-				error_message="No relevant repo found."
-			)
-
+			raise ResourceNotFound(reason=REPOSITORY_NOT_FOUND)
+		
+		if repo_info and repo_info.status != RepoStatus.COMPLETED:
+			if repo_info.status == RepoStatus.FAILED:
+				raise RepoAnalysNotCompleted(reason=REPO_ANALYSIS_FAILED)
+			else:
+				raise RepoAnalysNotCompleted()
 		
 		async_together_client = AsyncTogether(api_key=settings.TOGETHER_API_KEY)
 		
@@ -60,15 +63,11 @@ class QnAService:
 		)
 		
 		if not qna_pkg:
-			return GetAnswersResponse(
-				is_error=True,
-				error_message="No Answers were generated"
-			)
+			raise QnAGenerationFailed()
 		
 		formatted_qna = format_qna_text(qna_pkg, show_debug=False, ascii_bars=True)
 		
 		return GetAnswersResponse(
-			is_error=False,
 			qna_pkg=qna_pkg,
 			format_qna_text=formatted_qna
 		)

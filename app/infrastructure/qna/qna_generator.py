@@ -43,14 +43,11 @@ Questions are currently hardcoded in `DEFAULT_QUESTIONS` (ID + text). You can:
 This file intentionally contains **no** database logic beyond reading the repo
 analysis and **no** email code. It’s a single responsibility “Q&A packer”.
 """
-from __future__ import annotations
 import json
 import logging
 from typing import Any, Dict, List, Tuple, Optional
 
-from models_src.dto.repo import RepoResponseDTO
-from models_src.repositories.repo import TortoiseRepoStore
-from together import AsyncTogether, Together
+from together import AsyncTogether
 
 from .qna_models import QAPair, ProjectQnAPackage
 from .qna_utils import _to_bool, NO_ANSWER, snippet_calculator
