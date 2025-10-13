@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 class QnARequest(BaseModel):
     """Request wrapper for analysis"""
     # example: "my-project"
-    relative_path: str = Field(
+    repo_alias_name: str = Field(
         ...,
-        description="The relative path to the repository",
+        description="The repository alias name",
     )

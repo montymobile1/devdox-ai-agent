@@ -26,7 +26,7 @@ async def answer(
     
     get_answers_response:GetAnswersResponse = await service.get_answers(
         user_claims=user_claims,
-        relative_path=request.relative_path
+        repo_alias_name=request.repo_alias_name
     )
     
     if get_answers_response.is_error:
