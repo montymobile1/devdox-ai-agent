@@ -211,7 +211,7 @@ def _status_line(
     
     bits: List[str] = [f"Status: {label}"]
     
-    if qa.confidence:
+    if qa.confidence is not None:
         bits.append(f"Confidence: {qa.confidence:.2f}")
         if include_confidence_stars:
             bits.append(f"Stars: {_confidence_stars(qa.confidence)}")
