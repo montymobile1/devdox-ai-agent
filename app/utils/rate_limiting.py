@@ -17,7 +17,7 @@ class RateLimits:
     """Common rate limit configurations"""
 
     # Standard endpoints
-    STANDARD = "5/minute"
+    STANDARD = "100/minute"
 
     ANALYSIS = "10/minute"
     LOAD_TEST = "5/minute"
