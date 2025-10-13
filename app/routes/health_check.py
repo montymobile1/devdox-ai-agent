@@ -15,7 +15,6 @@ router = APIRouter()
     description="Health check",
     operation_id="Health"
 )
-#@limiter.exempt
 async def get_health_check(
 ) -> Dict[str, Any]:
     return {"status": "running"}
