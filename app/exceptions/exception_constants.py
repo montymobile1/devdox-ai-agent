@@ -29,3 +29,4 @@ FAILED_GENERATE_API_KEY_RETRIES_LOG_MESSAGE = (
 
 REPO_ANALYSIS_NOT_COMPLETED = "Repository Analysis has not been completed yet"
 REPO_ANALYSIS_FAILED = "Repository Analysis has failed, cannot proceed"
+REPO_ANALYSIS_NOT_REQUESTED = "Repository Analysis has not been requested yet. Please start the analysis first."
