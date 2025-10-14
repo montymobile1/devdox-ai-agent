@@ -4,7 +4,7 @@ from typing import Dict, Optional, Type
 from pydantic import BaseModel, Field
 
 from app.infrastructure.mailing_service.models.base_models import NonBlankStr
-from app.infrastructure.mailing_service.models.context_shapes import FailureNotice, ProjectAnalysisFailure, QAReport
+from app.infrastructure.mailing_service.models.context_shapes import ProjectAnalysisFailure, QAReport
 from app.infrastructure.mailing_service.models.context_shapes import ProjectAnalysisSuccess
 
 
@@ -12,7 +12,6 @@ class Template(Enum):
 	PROJECT_ANALYSIS_FAILURE = "PROJECT_ANALYSIS_FAILURE"
 	PROJECT_ANALYSIS_SUCCESS = "PROJECT_ANALYSIS_SUCCESS"
 	PROJECT_QNA_SUMMARY = "PROJECT_QNA_SUMMARY"
-	PROJECT_QNA_SUMMARY_FAILURE = "PROJECT_QNA_SUMMARY_FAILURE"
 
 class TemplateShape(BaseModel):
 	template_name: str
@@ -55,13 +54,6 @@ TEMPLATE_SOURCE:Dict[str, TemplateShape] = {
 			html_template="project_qna.html",
 			plain_template="project_qna.txt",
 			context_shape=QAReport
-	),
-	Template.PROJECT_QNA_SUMMARY_FAILURE.value: TemplateShape(
-		subject="Question & Answer Summaries Failed",
-		template_name=Template.PROJECT_QNA_SUMMARY_FAILURE.value,
-		html_template="project_qna_failure.html",
-		plain_template="project_qna_failure.txt",
-		context_shape=FailureNotice
 	)
 }
 

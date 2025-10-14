@@ -9,7 +9,6 @@ from together import AsyncTogether
 from app.config import settings
 from app.infrastructure.mailing_service import Template
 from app.infrastructure.mailing_service.container import get_email_dispatcher
-from app.infrastructure.mailing_service.models.context_shapes import FailureNotice, FailureProject
 from app.infrastructure.mailing_service.models.context_shapes import Meta, Project, QAPair, QAReport
 from app.exceptions.custom_exceptions import QnAGenerationFailed, RepoAnalysisNotCompleted, ResourceNotFound
 from app.exceptions.exception_constants import REPO_ANALYSIS_FAILED, REPO_ANALYSIS_NOT_REQUESTED, REPOSITORY_NOT_FOUND
@@ -46,7 +45,7 @@ class QnAService:
 			repo_alias_name: str
 	) -> GetAnswersResponse:
 		repo = await self._find_repo_or_raise(user_claims.sub, repo_alias_name)
-		await self._ensure_completed_or_notify(repo, user_claims.email, repo_alias_name)
+		await self._ensure_completed_or_die(repo)
 		
 		qna_pkg = await self._generate_qna(repo)
 		formatted_qna = format_qna_text(qna_pkg, show_debug=False, ascii_bars=True)
@@ -65,8 +64,8 @@ class QnAService:
 			raise ResourceNotFound(reason=REPOSITORY_NOT_FOUND)
 		return repo
 	
-	async def _ensure_completed_or_notify(self, repo, user_email: Optional[str], project_name: str) -> None:
-		"""If repo analysis isn’t completed, notify (email if possible) and raise."""
+	async def _ensure_completed_or_die(self, repo) -> None:
+		"""If repo analysis isn’t completed, raise."""
 		if repo.status == RepoStatus.COMPLETED:
 			return
 		
@@ -131,17 +130,4 @@ class QnAService:
 			template=Template.PROJECT_QNA_SUMMARY,
 			context=qa_report_context,
 			base_context_shape_config={"by_alias": True},
-		)
-	
-	async def send_qna_summary_failure_email(
-			self, to_email: EmailStr, project_name: str, error_message: str, project_repo_url: Optional[str] = None
-	):
-		project_context_part = FailureProject(name=project_name, repo_url=project_repo_url)
-		project_failure_notice = FailureNotice(project=project_context_part, error_message=error_message)
-		
-		email_dispatcher = get_email_dispatcher()
-		await email_dispatcher.send_templated_html(
-			to=[to_email],
-			template=Template.PROJECT_QNA_SUMMARY_FAILURE,
-			context=project_failure_notice,
 		)
