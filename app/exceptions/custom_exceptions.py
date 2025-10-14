@@ -138,6 +138,8 @@ class RepoAnalysisNotCompleted(DevDoxAPIException):
 
 class QnAGenerationFailed(DevDoxAPIException):
     
+    http_status = status.HTTP_503_SERVICE_UNAVAILABLE
+    
     def __init__(self, log_message: str | None = None):
         super().__init__(
             user_message=SERVICE_UNAVAILABLE,
