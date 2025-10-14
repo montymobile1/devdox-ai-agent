@@ -151,3 +151,15 @@ class QAReport(BaseContextShape):
     project: Project
     meta: Meta
     pairs: List[QAPair]
+
+# --------------------------------------------
+# Question and Answer Summary Failure Context
+# --------------------------------------------
+
+class FailureProject(BaseModel):
+    name: str = Field(min_length=1)
+    repo_url: Optional[str] = None
+
+class FailureNotice(BaseContextShape):
+    project: FailureProject
+    error_message: Optional[str] = None
