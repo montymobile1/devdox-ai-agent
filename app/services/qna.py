@@ -81,17 +81,17 @@ class QnAService:
 
 	
 	async def _generate_qna(self, repo) -> ProjectQnAPackage:
-		client = AsyncTogether(api_key=settings.TOGETHER_API_KEY)
-		qna_pkg = await generate_project_qna(
-			id_for_repo=str(repo.id),
-			project_name=repo.repo_name,
-			repo_url=repo.html_url,
-			repo_system_reference=repo.repo_system_reference,
-			together_client=client,
-		)
-		if not qna_pkg:
-			raise QnAGenerationFailed()
-		return qna_pkg
+		async with AsyncTogether(api_key=settings.TOGETHER_API_KEY) as client:
+			qna_pkg = await generate_project_qna(
+				id_for_repo=str(repo.id),
+				project_name=repo.repo_name,
+				repo_url=repo.html_url,
+				repo_system_reference=repo.repo_system_reference,
+				together_client=client,
+			)
+			if not qna_pkg:
+				raise QnAGenerationFailed()
+			return qna_pkg
 	
 	async def _send_summary_if_possible(self, user_email: Optional[EmailStr], qna_pkg: ProjectQnAPackage) -> None:
 		if not user_email:
