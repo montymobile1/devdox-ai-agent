@@ -130,7 +130,7 @@ class ResourceNotFound(DevDoxAPIException):
     def __init__(self, reason=GENERIC_RESOURCE_NOT_FOUND):
         super().__init__(user_message=reason)
 
-class RepoAnalysNotCompleted(DevDoxAPIException):
+class RepoAnalysisNotCompleted(DevDoxAPIException):
     http_status = status.HTTP_400_BAD_REQUEST
     
     def __init__(self, reason=REPO_ANALYSIS_NOT_COMPLETED):

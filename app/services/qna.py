@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from together import AsyncTogether
 
 from app.config import settings
-from app.exceptions.custom_exceptions import QnAGenerationFailed, RepoAnalysNotCompleted, ResourceNotFound
+from app.exceptions.custom_exceptions import QnAGenerationFailed, RepoAnalysisNotCompleted, ResourceNotFound
 from app.exceptions.exception_constants import REPO_ANALYSIS_FAILED, REPOSITORY_NOT_FOUND
 from app.infrastructure.qna.formatters.qna_formatter_text import format_qna_text
 from app.infrastructure.qna.qna_generator import generate_project_qna
@@ -48,9 +48,9 @@ class QnAService:
 		
 		if repo_info and repo_info.status != RepoStatus.COMPLETED:
 			if repo_info.status == RepoStatus.FAILED:
-				raise RepoAnalysNotCompleted(reason=REPO_ANALYSIS_FAILED)
+				raise RepoAnalysisNotCompleted(reason=REPO_ANALYSIS_FAILED)
 			else:
-				raise RepoAnalysNotCompleted()
+				raise RepoAnalysisNotCompleted()
 		
 		async_together_client = AsyncTogether(api_key=settings.TOGETHER_API_KEY)
 		
