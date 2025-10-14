@@ -46,7 +46,7 @@ class QnAService:
 		if not repo_info:
 			raise ResourceNotFound(reason=REPOSITORY_NOT_FOUND)
 		
-		if repo_info and repo_info.status != RepoStatus.COMPLETED:
+		if repo_info.status != RepoStatus.COMPLETED:
 			if repo_info.status == RepoStatus.FAILED:
 				raise RepoAnalysisNotCompleted(reason=REPO_ANALYSIS_FAILED)
 			else:
