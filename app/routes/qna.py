@@ -19,12 +19,10 @@ router = APIRouter()
     operation_id="qna_summary"
 )
 async def answer(
-        #user_claims: Annotated[UserClaims, Depends(get_mcp_aware_user_context)],
+        user_claims: Annotated[UserClaims, Depends(get_mcp_aware_user_context)],
         request: QnARequest,
         service: Annotated[QnAService, Depends(QnAService.with_dependency)],
 ) -> Dict[str, Any]:
-    
-    user_claims = UserClaims(email="mohamadali.jaafar@montymobile.com", sub="user_2xioBPMzrTczyKDABvynLeToHst")
     
     get_answers_response:GetAnswersResponse = await service.get_answers(
         user_claims=user_claims,
