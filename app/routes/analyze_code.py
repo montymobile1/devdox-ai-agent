@@ -47,7 +47,7 @@ async def answer(
     async for chunk in service.answer_question(
             user_claims,
             [request.question],
-            request.relative_path
+            request.repo_alias_name
     ):
         full_response += chunk
 
