@@ -68,14 +68,12 @@ class QnAService:
 		"""If repo analysis isn’t completed, raise."""
 		if repo.status == RepoStatus.COMPLETED:
 			return
+			
+		if not repo.status or repo.status.strip() == "":
+			raise RepoAnalysisNotCompleted(reason=REPO_ANALYSIS_NOT_REQUESTED)
 		
-		if repo.status != RepoStatus.COMPLETED:
-			
-			if not repo.status or repo.status.strip() == "":
-				raise RepoAnalysisNotCompleted(reason=REPO_ANALYSIS_NOT_REQUESTED)
-			
-			if repo.status == RepoStatus.FAILED:
-				raise RepoAnalysisNotCompleted(reason=REPO_ANALYSIS_FAILED)
+		if repo.status == RepoStatus.FAILED:
+			raise RepoAnalysisNotCompleted(reason=REPO_ANALYSIS_FAILED)
 			
 		raise RepoAnalysisNotCompleted()
 
