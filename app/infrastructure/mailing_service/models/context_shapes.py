@@ -133,7 +133,6 @@ class QAPair(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0)
     evidence_snippets: List[str] = Field(default_factory=list)
     
-    #show_conf_and_evidence: Optional[bool] = Field(default=True)
     @computed_field
     @property
     def show_conf_and_evidence(self) -> bool:
