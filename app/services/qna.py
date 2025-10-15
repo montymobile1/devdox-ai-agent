@@ -45,7 +45,7 @@ class QnAService:
 			repo_alias_name: str
 	) -> GetAnswersResponse:
 		repo = await self._find_repo_or_raise(user_claims.sub, repo_alias_name)
-		await self._ensure_completed_or_die(repo)
+		self._ensure_completed_or_die(repo)
 		
 		qna_pkg = await self._generate_qna(repo)
 		formatted_qna = format_qna_text(qna_pkg, show_debug=False, ascii_bars=True)
@@ -64,12 +64,12 @@ class QnAService:
 			raise ResourceNotFound(reason=REPOSITORY_NOT_FOUND)
 		return repo
 	
-	async def _ensure_completed_or_die(self, repo) -> None:
+	def _ensure_completed_or_die(self, repo) -> None:
 		"""If repo analysis isn’t completed, raise."""
 		if repo.status == RepoStatus.COMPLETED:
 			return
 		
-		if not repo.status or repo.status != RepoStatus.COMPLETED:
+		if repo.status != RepoStatus.COMPLETED:
 			
 			if not repo.status or repo.status.strip() == "":
 				raise RepoAnalysisNotCompleted(reason=REPO_ANALYSIS_NOT_REQUESTED)
