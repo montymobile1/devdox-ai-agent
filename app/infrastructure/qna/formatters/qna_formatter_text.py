@@ -198,7 +198,6 @@ def _confidence_stars(conf: float, total: int = 5) -> str:
 
 def _status_line(
     qa: QAPair,
-    *,
     include_confidence_bar: bool,
     include_confidence_stars: bool,
     ascii_bars: bool,
@@ -209,12 +208,16 @@ def _status_line(
         label = "Inferred"
     else:
         label = "Evidence-backed"
+    
+    bits: List[str] = [f"Status: {label}"]
+    
+    if qa.confidence is not None:
+        bits.append(f"Confidence: {qa.confidence:.2f}")
+        if include_confidence_stars:
+            bits.append(f"Stars: {_confidence_stars(qa.confidence)}")
+        if include_confidence_bar:
+            bits.append(f"Bar: {_confidence_bar(qa.confidence, ascii_bars=ascii_bars)}")
 
-    bits: List[str] = [f"Status: {label}", f"Confidence: {qa.confidence:.2f}"]
-    if include_confidence_stars:
-        bits.append(f"Stars: {_confidence_stars(qa.confidence)}")
-    if include_confidence_bar:
-        bits.append(f"Bar: {_confidence_bar(qa.confidence, ascii_bars=ascii_bars)}")
     return " | ".join(bits)
 
 def _dedupe_preserve(items: Iterable[str]) -> List[str]:

@@ -1,9 +1,19 @@
+from datetime import datetime
+from math import isclose
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field, ConfigDict, Field, field_validator
+
+from app.config import settings
+from app.infrastructure.mailing_service.constants import EVIDENCE_AND_CONFIDENCE_DISPLAY_DATA_CAP
+
 
 class BaseContextShape(BaseModel):
     """Marker base for all email context models."""
+
+# --------------------------------------------
+# Project Analysis Context
+# --------------------------------------------
 
 class ProjectAnalysisFailureTemplateLayout(BaseModel):
     """
@@ -74,3 +84,91 @@ class ProjectAnalysisSuccess(BaseContextShape):
     repository_branch: Optional[str] = None
     job_type: Optional[str] = None
     job_queued_at: Optional[str] = None
+
+# --------------------------------------------
+# Question and Answer Summary Context
+# --------------------------------------------
+
+class Project(BaseModel):
+    """Required: name, repo_url (used directly in UI)."""
+    name: str = Field(min_length=1)
+    repo_url: str
+
+
+class Meta(BaseModel):
+    """
+    generated_at_iso is required and parsed into datetime.
+    model and prompt_version are optional per the Jinja guards.
+    """
+    model_config = ConfigDict(populate_by_name=True)
+
+    generated_at: datetime = Field(alias="generated_at_iso")
+    model: Optional[str] = None
+    prompt_version: Optional[int] = None
+
+    @field_validator("generated_at")
+    @classmethod
+    def _must_be_timezone_aware(cls, v: datetime) -> datetime:
+        if v.tzinfo is None or v.utcoffset() is None:
+            raise ValueError("generated_at_iso must be timezone-aware (include offset).")
+        return v
+
+def compute_show_conf_and_evidence(confidence) -> bool:
+    cap = EVIDENCE_AND_CONFIDENCE_DISPLAY_DATA_CAP
+    eps = 1e-9
+    
+    if (confidence < cap) or isclose(confidence, cap, abs_tol=eps) or settings.API_DEBUG:
+        return True
+    
+    return False
+
+class QAPair(BaseModel):
+    """
+    All core fields are required.
+    evidence_snippets is optional in the UI; default to [].
+    """
+    question: str = Field(min_length=1)
+    answer: str
+    insufficient_evidence: bool
+    confidence: float = Field(ge=0.0, le=1.0)
+    evidence_snippets: List[str] = Field(default_factory=list)
+    
+    @computed_field
+    @property
+    def show_conf_and_evidence(self) -> bool:
+        """Whether to show the confidence and evidence snippets in the html"""
+        return compute_show_conf_and_evidence(self.confidence)
+    
+    
+    # Convenience properties to mirror the template logic:
+    @computed_field
+    @property
+    def inferred(self) -> bool:
+        """True if the answer string begins with 'Inferred:' (UI shows a badge)."""
+        return self.answer.startswith("Inferred:")
+
+    @computed_field
+    @property
+    def normalized_answer(self) -> str:
+        """Answer with leading 'Inferred:' removed (how the UI prints it)."""
+        return self.answer[9:].lstrip() if self.inferred else self.answer
+
+    @computed_field
+    @property
+    def confidence_pct(self) -> int:
+        """0–100 integer for progress bar width / label."""
+        return round(self.confidence * 100)
+
+
+class QAReport(BaseContextShape):
+    """
+    Root document:
+    - project: required
+    - meta: required (with generated_at_iso required, others optional)
+    - pairs: required list (can be empty)
+    """
+    project: Project
+    meta: Meta
+    pairs: List[QAPair]
+    
+    

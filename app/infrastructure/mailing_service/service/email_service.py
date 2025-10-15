@@ -129,7 +129,8 @@ class EmailDispatcher(IEmailDispatcher):
             self,
             to: List[EmailStr],
             template: Template,
-            context: Optional[BaseContextShape] = None,
+            context: BaseContextShape | None = None,
+            base_context_shape_config: dict[str, str] | None = None,
             subject: Optional[str] = None,
             cc: Optional[List[EmailStr]] = None,
             bcc: Optional[List[EmailStr]] = None,
@@ -145,7 +146,7 @@ class EmailDispatcher(IEmailDispatcher):
         
         template_meta = self._template_resolver.get_template_meta_by_name(template)
         transformed_subject = self._options.prefix_subject(subject if subject else template_meta.subject)
-
+        
         required_shape = template_meta.context_shape
         if required_shape is not None:
                 if (context is None) or (not isinstance(context, required_shape)):
@@ -164,6 +165,9 @@ class EmailDispatcher(IEmailDispatcher):
         )
         
         if context and template_meta.context_shape:
-            email_model.template_context = context.model_dump()
+            if base_context_shape_config:
+                email_model.template_context = context.model_dump(**base_context_shape_config)
+            else:
+                email_model.template_context = context.model_dump()
         
         return await self._client.send_templated_html_email(email_model)

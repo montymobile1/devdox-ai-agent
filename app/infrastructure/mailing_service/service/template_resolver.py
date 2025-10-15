@@ -4,13 +4,14 @@ from typing import Dict, Optional, Type
 from pydantic import BaseModel, Field
 
 from app.infrastructure.mailing_service.models.base_models import NonBlankStr
-from app.infrastructure.mailing_service.models.context_shapes import ProjectAnalysisFailure
+from app.infrastructure.mailing_service.models.context_shapes import ProjectAnalysisFailure, QAReport
 from app.infrastructure.mailing_service.models.context_shapes import ProjectAnalysisSuccess
 
 
 class Template(Enum):
 	PROJECT_ANALYSIS_FAILURE = "PROJECT_ANALYSIS_FAILURE"
 	PROJECT_ANALYSIS_SUCCESS = "PROJECT_ANALYSIS_SUCCESS"
+	PROJECT_QNA_SUMMARY = "PROJECT_QNA_SUMMARY"
 
 class TemplateShape(BaseModel):
 	template_name: str
@@ -40,12 +41,19 @@ TEMPLATE_SOURCE:Dict[str, TemplateShape] = {
 		plain_template="project_analysis_failure.txt",
 		context_shape=ProjectAnalysisFailure
 	),
-Template.PROJECT_ANALYSIS_SUCCESS.value: TemplateShape(
-		subject="Repository Analysis Successful",
-		template_name=Template.PROJECT_ANALYSIS_SUCCESS.value,
-		html_template="project_analysis_success.html",
-		plain_template="project_analysis_success.txt",
-		context_shape=ProjectAnalysisSuccess
+	Template.PROJECT_ANALYSIS_SUCCESS.value: TemplateShape(
+			subject="Repository Analysis Successful",
+			template_name=Template.PROJECT_ANALYSIS_SUCCESS.value,
+			html_template="project_analysis_success.html",
+			plain_template="project_analysis_success.txt",
+			context_shape=ProjectAnalysisSuccess
+	),
+	Template.PROJECT_QNA_SUMMARY.value: TemplateShape(
+			subject="Question & Answer Summaries",
+			template_name=Template.PROJECT_QNA_SUMMARY.value,
+			html_template="project_qna.html",
+			plain_template="project_qna.txt",
+			context_shape=QAReport
 	)
 }
 
