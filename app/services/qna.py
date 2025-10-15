@@ -47,12 +47,14 @@ class QnAService:
 			raise ResourceNotFound(reason=REPOSITORY_NOT_FOUND)
 		
 		if repo_info.status != RepoStatus.COMPLETED:
+			
+			if not repo_info.status or repo_info.status.strip() == "":
+				raise RepoAnalysisNotCompleted(reason=REPO_ANALYSIS_NOT_REQUESTED)
+			
 			if repo_info.status == RepoStatus.FAILED:
 				raise RepoAnalysisNotCompleted(reason=REPO_ANALYSIS_FAILED)
-			elif repo_info.status.strip() == "":
-				raise RepoAnalysisNotCompleted(reason=REPO_ANALYSIS_NOT_REQUESTED)
-			else:
-				raise RepoAnalysisNotCompleted()
+			
+			raise RepoAnalysisNotCompleted()
 		
 		async_together_client = AsyncTogether(api_key=settings.TOGETHER_API_KEY)
 		
