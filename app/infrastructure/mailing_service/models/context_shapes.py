@@ -1,7 +1,11 @@
 from datetime import datetime
+from math import isclose
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, computed_field, ConfigDict, Field, field_validator
+
+from app.config import settings
+from app.infrastructure.mailing_service.constants import EVIDENCE_AND_CONFIDENCE_DISPLAY_DATA_CAP
 
 
 class BaseContextShape(BaseModel):
@@ -109,6 +113,14 @@ class Meta(BaseModel):
             raise ValueError("generated_at_iso must be timezone-aware (include offset).")
         return v
 
+def compute_show_conf_and_evidence(confidence) -> bool:
+    cap = EVIDENCE_AND_CONFIDENCE_DISPLAY_DATA_CAP
+    eps = 1e-9
+    
+    if (confidence < cap) or isclose(confidence, cap, abs_tol=eps) or settings.API_DEBUG:
+        return True
+    
+    return False
 
 class QAPair(BaseModel):
     """
@@ -120,7 +132,15 @@ class QAPair(BaseModel):
     insufficient_evidence: bool
     confidence: float = Field(ge=0.0, le=1.0)
     evidence_snippets: List[str] = Field(default_factory=list)
-
+    
+    #show_conf_and_evidence: Optional[bool] = Field(default=True)
+    @computed_field
+    @property
+    def show_conf_and_evidence(self) -> bool:
+        """Whether to show the confidence and evidence snippets in the html"""
+        return compute_show_conf_and_evidence(self.confidence)
+    
+    
     # Convenience properties to mirror the template logic:
     @computed_field
     @property
@@ -151,3 +171,5 @@ class QAReport(BaseContextShape):
     project: Project
     meta: Meta
     pairs: List[QAPair]
+    
+    

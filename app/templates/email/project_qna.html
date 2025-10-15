@@ -72,7 +72,7 @@
       <!-- Body -->
       <div class="content">
         <div class="meta">
-          Generated {{ meta.generated_at_iso }}{% if meta.model %} · Model: {{ meta.model }}{% endif %}{% if meta.prompt_version %} · Prompt v{{ meta.prompt_version }}{% endif %}
+          Generated {{ meta.generated_at_iso }}
         </div>
 
         {% set total = pairs|length %}
@@ -102,23 +102,28 @@
               {% if inferred %}<strong>Inferred:</strong> {{ p.answer[9:]|trim }}{% else %}{{ p.answer }}{% endif %}
             </p>
 
-            <div class="conf-row">
-              <div style="min-width:90px;">Confidence {{ conf_pct }}%</div>
-              <div class="bar">
-                <div style="height:8px; width: {{ conf_pct }}%; background: {{ color }};"></div>
-              </div>
-            </div>
+            {% if p.show_conf_and_evidence == true %}
+              <div class="conf-row">
+                <div style="min-width:90px;">Confidence {{ conf_pct }}%</div>
 
-            {% if p.evidence_snippets %}
-              <div class="evidence-box">
-                <div class="evidence-label">Evidence from analysis</div>
-                <ul class="evidence-list">
-                  {% for s in p.evidence_snippets %}
-                    <li>“{{ s }}”</li>
-                  {% endfor %}
-                </ul>
+                <div class="bar">
+                  <div style="height:8px; width: {{ conf_pct }}%; background: {{ color }};"></div>
+                </div>
               </div>
+
+              {% if p.evidence_snippets %}
+                <div class="evidence-box">
+                  <div class="evidence-label">Evidence from analysis</div>
+                  <ul class="evidence-list">
+                    {% for s in p.evidence_snippets %}
+                      <li>“{{ s }}”</li>
+                    {% endfor %}
+                  </ul>
+                </div>
+              {% endif %}
+
             {% endif %}
+
           </div>
         {% endfor %}
       </div>

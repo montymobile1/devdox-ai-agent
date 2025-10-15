@@ -109,9 +109,7 @@ class QnAService:
 	async def send_qna_summary_email(self, to_email: EmailStr, qna_pkg: ProjectQnAPackage):
 		project_context_part = Project(name=qna_pkg.project_name, repo_url=qna_pkg.repo_url)
 		meta_context_part = Meta(
-			generated_at_iso=qna_pkg.generated_at,
-			model=qna_pkg.model or "",
-			prompt_version=qna_pkg.prompt_version or None,
+			generated_at_iso=qna_pkg.generated_at
 		)
 		pairs_context_part: List[QAPair] = [
 			QAPair(
@@ -119,7 +117,7 @@ class QnAService:
 				answer=p.answer,
 				confidence=p.confidence,
 				insufficient_evidence=p.insufficient_evidence,
-				evidence_snippets=p.evidence_snippets,
+				evidence_snippets=p.evidence_snippets
 			)
 			for p in qna_pkg.pairs
 		]

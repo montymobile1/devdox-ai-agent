@@ -1,7 +1,7 @@
 Project Q&A — {{ project.name }}
 {{ project.repo_url }}
 
-Generated: {{ meta.generated_at_iso }}{% if meta.model %} | Model: {{ meta.model }}{% endif %}{% if meta.prompt_version %} | Prompt v{{ meta.prompt_version }}{% endif %}
+Generated: {{ meta.generated_at_iso }}
 
 {% set total = pairs|length %}
 {% set insuff = pairs|selectattr('insufficient_evidence')|list|length %}
