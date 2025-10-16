@@ -20,10 +20,9 @@ class AnalyseRequest(BaseModel):
         description="A question to ask about the code repository",
     )
     
-    # example: "my-project"
-    relative_path: str = Field(
+    repo_alias_name: str = Field(
         ...,
-        description="The relative path to the repository",
+        description="The repository alias name given by the user",
     )
     
     # # Clean, dedupe, bound lengths, and cap count

@@ -2,7 +2,7 @@ import asyncio
 from abc import abstractmethod
 from typing import Any, Optional, Protocol
 
-from fastapi_mail import ConnectionConfig, FastMail, MessageSchema, MessageType, MultipartSubtypeEnum
+from fastapi_mail import ConnectionConfig, FastMail, MessageType, MultipartSubtypeEnum
 from jinja2 import TemplateNotFound, TemplateSyntaxError
 
 from app.config import MailSettings
@@ -13,6 +13,7 @@ from app.infrastructure.mailing_service.models.base_preview_models import Previe
 from app.infrastructure.mailing_service.models.base_preview_router import make_preview
 from app.infrastructure.mailing_service.exception import exception_constants
 from app.infrastructure.mailing_service.exception.mail_exceptions import MailConfigError, MailSendError, MailTemplateError
+from app.infrastructure.temporary_fastapi_message_schema import MessageSchema
 
 
 class IMailClient(Protocol):

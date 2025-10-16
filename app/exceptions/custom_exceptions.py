@@ -36,7 +36,7 @@ from starlette import status
 from app.exceptions.exception_constants import (
     AUTH_FAILED,
     GENERIC_BAD_REQUEST,
-    GENERIC_RESOURCE_NOT_FOUND,
+    GENERIC_RESOURCE_NOT_FOUND, REPO_ANALYSIS_NOT_COMPLETED, SERVICE_UNAVAILABLE,
 )
 
 
@@ -129,3 +129,20 @@ class ResourceNotFound(DevDoxAPIException):
 
     def __init__(self, reason=GENERIC_RESOURCE_NOT_FOUND):
         super().__init__(user_message=reason)
+
+class RepoAnalysisNotCompleted(DevDoxAPIException):
+    http_status = status.HTTP_400_BAD_REQUEST
+    
+    def __init__(self, reason=REPO_ANALYSIS_NOT_COMPLETED):
+        super().__init__(user_message=reason)
+
+class QnAGenerationFailed(DevDoxAPIException):
+    
+    http_status = status.HTTP_503_SERVICE_UNAVAILABLE
+    
+    def __init__(self, log_message: str | None = None):
+        super().__init__(
+            user_message=SERVICE_UNAVAILABLE,
+            log_message=log_message or "Q&A generation failed",
+            error_type="QNA_GENERATION_FAILED",
+        )

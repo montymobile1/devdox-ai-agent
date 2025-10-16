@@ -37,15 +37,15 @@ class AnalyseService:
         self,
         user_claims: UserClaims,
         questions: List[str],
-        relative_path: str
+        repo_alias_name: str
     ) -> AsyncGenerator[str, None]:
         async_together_client = AsyncTogether(api_key=settings.TOGETHER_API_KEY)
         
         # 1) Find repo
         # Figure out which repo we’re supposed to analyze for this user + path.
         # If we can’t find that repo, exit early
-        repo_info = await self.repo_store.find_by_user_and_path(
-            user_id=user_claims.sub, relative_path=relative_path
+        repo_info = await self.repo_store.find_by_user_and_alias_name(
+            user_id=user_claims.sub, repo_alias_name=repo_alias_name
         )
         if not repo_info:
             yield "No relevant repo found."
