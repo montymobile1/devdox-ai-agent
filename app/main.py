@@ -10,12 +10,14 @@ import asyncio
 from fastapi import FastAPI, Depends
 from fastapi_mcp import FastApiMCP, AuthConfig
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi.middleware import SlowAPIMiddleware
 from app.config import settings, TORTOISE_ORM
 from app.exceptions.register import register_exception_handlers
 from app.logging_config import setup_logging
 from app.routes import router as api_router
 from app.infrastructure.queue_consumer import QueueConsumer
 from app.config import supabase_queue
+from app.utils.rate_limiting import limiter
 from app.utils.auth import mcp_auth_interceptor
 
 logger = setup_logging()
@@ -81,6 +83,7 @@ async def lifespan(app: FastAPI):
     logger.info("Application shutdown complete")
 
 
+
 # Initialize FastAPI app
 app = FastAPI(
     title="DevDox AI Agent API",
@@ -105,7 +108,8 @@ app.include_router(api_router)
 
 # Register all exception handlers from one place
 register_exception_handlers(app)
-
+app.add_middleware(SlowAPIMiddleware)
+app.state.limiter = limiter
 
 mcp = FastApiMCP(app,
                  name="My API MCP",
@@ -114,7 +118,7 @@ mcp = FastApiMCP(app,
                  auth_config=AuthConfig(
                      dependencies=[Depends(mcp_auth_interceptor)]
                  ),
-                 include_operations = ["analyze_code", "load_tests", "qna_summary"]
+                 include_operations = ["analyze_code", "load_tests", "qna_summary","Health"]
                  )
 mcp.mount()
 # Streamable HTTP (for future-proofing)

@@ -18,7 +18,8 @@ Example usage in your main application file:
 """
 
 from fastapi import FastAPI
-
+from slowapi import  _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from app.exceptions.custom_exceptions import DevDoxAPIException
 from app.exceptions.handlers import (
     devdox_base_exception_handler,
@@ -36,3 +37,4 @@ def register_exception_handlers(app: FastAPI):
 
     app.add_exception_handler(Exception, generic_exception_handler)
     app.add_exception_handler(DevDoxAPIException, devdox_base_exception_handler)
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)

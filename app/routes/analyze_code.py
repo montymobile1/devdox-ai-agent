@@ -12,9 +12,11 @@ Key functionalities:
 """
 
 import logging
+
 from typing import Annotated, Any, Dict
 from fastapi import APIRouter, Depends, status
 from app.schemas.analyze import (AnalyseRequest)
+from app.utils.rate_limiting import limiter, RateLimits
 from app.services.analyze import (
     AnalyseService
 )
@@ -34,6 +36,7 @@ router = APIRouter()
     description="Analyze repo based on relative path",
     operation_id="analyze_code"
 )
+@limiter.limit(RateLimits.ANALYSIS)
 async def answer(
         user_claims: Annotated[UserClaims, Depends(get_mcp_aware_user_context)],
         request: AnalyseRequest,
