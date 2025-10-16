@@ -118,8 +118,7 @@ mcp = FastApiMCP(app,
                  auth_config=AuthConfig(
                      dependencies=[Depends(mcp_auth_interceptor)]
                  ),
-                 include_operations = ["analyze_code", "load_tests", "qna_summary"]
-                 include_operations = ["analyze_code", "load_tests", "Health"]
+                 include_operations = ["analyze_code", "load_tests", "qna_summary","Health"]
                  )
 mcp.mount()
 # Streamable HTTP (for future-proofing)
