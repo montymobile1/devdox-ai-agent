@@ -2,7 +2,7 @@ from app.config import settings
 from app.infrastructure.mailing_service import EmailDispatcher, EmailDispatchOptions, FastAPIMailClient
 
 
-def get_email_dispatcher():
+def get_email_dispatcher() -> EmailDispatcher:
 	"""Dependency injection container"""
 	
 	fast_mail_client = FastAPIMailClient(
