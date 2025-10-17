@@ -58,10 +58,6 @@ class AnalyseService:
         # 0) Find user
         user = await self.user_store.find_by_user_id(user_id=user_claims.sub)
         
-        if not user:
-            yield "No relevant user found."
-            return
-        
         # 1) Find repo
         # Figure out which repo we’re supposed to analyze for this user + path.
         # If we can’t find that repo, exit early
