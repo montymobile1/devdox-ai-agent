@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -130,7 +130,7 @@ class EmailDispatcher(IEmailDispatcher):
             to: List[EmailStr],
             template: Template,
             context: BaseContextShape | None = None,
-            base_context_shape_config: dict[str, str] | None = None,
+            base_context_shape_config: dict[str, Any] | None = None,
             subject: Optional[str] = None,
             cc: Optional[List[EmailStr]] = None,
             bcc: Optional[List[EmailStr]] = None,
