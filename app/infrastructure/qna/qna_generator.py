@@ -442,6 +442,11 @@ def sanitize_custom_questions_shape(questions: QuestionsIn) -> Optional[List[Que
 # --------------------------------------------
 # Public API (pure function returning QnA data)
 # --------------------------------------------
+
+def get_default_questions():
+    return DEFAULT_QUESTIONS
+
+
 async def generate_project_qna(
         *,
         id_for_repo: str,
