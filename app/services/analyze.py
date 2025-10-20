@@ -1,7 +1,10 @@
 import logging
 from typing import Annotated, Any, AsyncGenerator, Dict, List, Tuple
+
+from encryption_src.fernet.service import FernetEncryptionHelper
 from fastapi import Depends
 from models_src.dto.repo import RepoResponseDTO
+from models_src.repositories.user import TortoiseUserStore
 from together import AsyncTogether
 import asyncio
 import json
@@ -11,6 +14,7 @@ from cohere import AsyncClientV2 as CohereAsyncClientV2
 
 from app.utils.auth import UserClaims
 from app.config import settings
+from app.utils.encryption import get_encryption_helper
 
 
 class AnalyseService:
@@ -20,18 +24,28 @@ class AnalyseService:
     
     TOTAL_K = 10  # luggage limit for LLM context
     
-    def __init__(self, repo_store: RepoStore, code_chunks_store: CodeChunksStore):
-
+    def __init__(
+        self,
+        repo_store: RepoStore,
+        code_chunks_store: CodeChunksStore,
+        user_store: TortoiseUserStore,
+        encryption_service: FernetEncryptionHelper
+    ):
         self.repo_store = repo_store
         self.code_chunks_store = code_chunks_store
+        self.user_store = user_store
+        self.encryption_service = encryption_service
+        
 
     @classmethod
     def with_dependency(
         cls,
         repo_store: Annotated[RepoStore, Depends()],
         code_chunks_store: Annotated[CodeChunksStore, Depends()],
+        user_store: Annotated[TortoiseUserStore, Depends()],
+        encryption_service: Annotated[FernetEncryptionHelper, Depends(get_encryption_helper)]
     ) -> "AnalyseService":
-        return cls(repo_store, code_chunks_store)
+        return cls(repo_store, code_chunks_store, user_store, encryption_service)
     
     async def answer_question(
         self,
@@ -40,6 +54,9 @@ class AnalyseService:
         repo_alias_name: str
     ) -> AsyncGenerator[str, None]:
         async_together_client = AsyncTogether(api_key=settings.TOGETHER_API_KEY)
+        
+        # 0) Find user
+        user = await self.user_store.find_by_user_id(user_id=user_claims.sub)
         
         # 1) Find repo
         # Figure out which repo we’re supposed to analyze for this user + path.
@@ -89,9 +106,22 @@ class AnalyseService:
         if not results:
             yield "No code chunks found."
             return
-
+        
+        # 4.1) grab the decrypted user encryption salt
+        
+        decrypted_encryption_salt = self.encryption_service.decrypt(user.encryption_salt)
+        
+        # 4.2) Decrypt the result content
+        for result in results:
+            encrypted_content = result.get("content")
+            
+            if not encrypted_content:
+                continue
+            
+            result['content'] = self._decrypt_content(encrypted_content, decrypted_encryption_salt)
+        
         # 5) README preface: If there’s README content for this repo, stream it first as helpful context.
-        readme_content = await self._get_readme_content(user_claims.sub, str(repo_info.id))
+        readme_content = await self._get_readme_content(user_claims.sub, str(repo_info.id), decrypted_encryption_salt)
         if readme_content:
             yield f"README/Setup information:\n{readme_content}"
 
@@ -111,6 +141,15 @@ class AnalyseService:
             together=async_together_client, reranked_results=reranked, questions=questions, repo_info=repo_info
         ):
             yield chunk
+    
+    
+    def _decrypt_content(self, encrypted_content, decrypted_encryption_salt):
+        if not encrypted_content:
+            return None
+        
+        decrypted_content = self.encryption_service.decrypt_for_user(encrypted_content, decrypted_encryption_salt)
+        
+        return decrypted_content
     
     async def _generate_embeddings_batch(
             self,
@@ -240,7 +279,7 @@ class AnalyseService:
         except Exception as e:
             logging.error(f"Async documentation generation failed: {e}")
     
-    async def _get_readme_content(self, user_id: str, repo_id: str) -> str:
+    async def _get_readme_content(self, user_id: str, repo_id: str, encryption_salt) -> str:
         """Extract README content collection into separate method"""
         read_me_results = await self.code_chunks_store.get_repo_file_chunks(
             user_id, repo_id, file_name="readme"
@@ -253,7 +292,8 @@ class AnalyseService:
         for chunk in read_me_results:
             content = chunk.get("content")
             if content:
-                readme_content += content + "\n"
+                decrypted_content = self._decrypt_content(content, encryption_salt)
+                readme_content += decrypted_content + "\n"
 
         return readme_content.strip()
     
