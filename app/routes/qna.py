@@ -29,15 +29,9 @@ async def answer(
         repo_alias_name=request.repo_alias_name
     )
     
-    full_response = get_answers_response.format_qna_text
-    
     return {
-        "content": [
-            {
-                "type": "text",
-                "text": full_response
-            }
-        ]
+        "success": True,
+        "message": f"Your questions and answers have been sent to your email address @ `{get_answers_response.user_email}`. Please check your inbox. If the message is not there, review your Spam or Promotions folders, and confirm that your email address is correct. If your address is correct and you still have not received the message, please contact the DevDox team for assistance."
     }
 
 
