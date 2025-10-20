@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 class GetAnswersResponse(BaseModel):
 	qna_pkg: ProjectQnAPackage | None = None
 	format_qna_text: str | None = None
+	user_email: EmailStr | None = None
 
 class QnAService:
 	
@@ -52,7 +53,7 @@ class QnAService:
 		
 		await self._send_summary_if_possible(user_claims.email, qna_pkg)
 		
-		return GetAnswersResponse(qna_pkg=qna_pkg, format_qna_text=formatted_qna)
+		return GetAnswersResponse(user_email=user_claims.email, qna_pkg=qna_pkg, format_qna_text=formatted_qna)
 	
 	# ---------- private helpers ----------
 	
