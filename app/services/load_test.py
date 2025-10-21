@@ -13,7 +13,7 @@ from app.schemas.load_test import LoadTestRequest, LoadTestResult, LoadTestStatu
 from together import Together
 from app.config import settings, supabase_queue
 from app.utils.auth import UserClaims
-from app.utils.encryption import FernetEncryptionHelper
+from app.utils.encryption import get_encryption_helper
 from devdox_ai_locust import HybridLocustGenerator
 from devdox_ai_locust.schemas.processing_result import SwaggerProcessingRequest
 from devdox_ai_locust.utils.swagger_utils import get_api_schema
@@ -187,7 +187,9 @@ class LoadTestService:
                         "token_id": repo_info.token_id
                     }
                 )
-
+            
+            fernet_encryption_helper = get_encryption_helper()
+            
 
             job_payload = LoadLocustPayload(
                 repo_id = str(repo_info.repo_id),
@@ -197,7 +199,7 @@ class LoadTestService:
                 git_token = str(token_info.id),
                 git_provider = token_info.git_hosting,
                 auth_token=(
-                    FernetEncryptionHelper().encrypt(user_claims.git_token)
+                    fernet_encryption_helper.encrypt(user_claims.git_token)
                     if (
                             token_info.git_hosting
                             and user_claims.git_provider
