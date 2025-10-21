@@ -14,7 +14,7 @@ from app.infrastructure.queue_job_tracker.job_trace_metadata import JobTraceMeta
 from app.infrastructure.queue_job_tracker.job_tracker import JobLevels, JobTracker
 from app.schemas.load_test import LoadTestRequest, LoadTestConfig, RepositoryValidationError
 from app.services.api_test_generator import APITestGenerator
-from app.utils.encryption import FernetEncryptionHelper
+from app.utils.encryption import get_encryption_helper
 from devdox_ai_git.repo_fetcher import RepoFetcher
 from models_src.repositories.git_label import TortoiseGitLabelStore as GitLabelRepository
 from models_src.repositories.repo import TortoiseRepoStore as RepoRepository
@@ -141,12 +141,14 @@ def extract_files_for_commit(result: List[dict], repo_root: Path) -> Dict[str, s
     return files_for_commit
 
 def  get_token(token_db:str,encryption_salt:str, git_provider_label:str,git_provider:str, auth_token:str|None) -> str:
+    fernet_encryption_helper = get_encryption_helper()
+    
     if auth_token and git_provider == git_provider_label:
-        return  FernetEncryptionHelper().decrypt(auth_token)
+        return  fernet_encryption_helper.decrypt(auth_token)
     else:
-        return FernetEncryptionHelper().decrypt_for_user(
+        return fernet_encryption_helper.decrypt_for_user(
                     token_db,
-                    salt_b64=FernetEncryptionHelper().decrypt(encryption_salt)
+                    salt_b64=fernet_encryption_helper.decrypt(encryption_salt)
                 )
 
 def get_repo_info(git_provider, created_repo):
