@@ -102,7 +102,7 @@ class SupabaseQueueFailHandler:
         retry_job_data = dict(job_data)
         retry_job_data.update(
             {
-                "attempts": attempts + 1,
+                "attempts": int(attempts),
                 "retry_count": attempts,              # explicit retry counter (mirrors attempts), retries done
                 "error_message": str(error),
                 "last_error_trace": error_trace,
@@ -129,9 +129,27 @@ class SupabaseQueueFailHandler:
             job_data, attempts=attempts, error=error, error_trace=error_trace
         )
         
-        # Remove current message then re-send with delay
-        await self.queue.delete(queue_name, msg_id)
-        new_msg_id = await self.queue.send(queue=queue_name, message=retry_payload, delay=delay)
+        # 1) Acknowledge the current message first, if we fail to delete, do NOT enqueue a duplicate.
+        deleted = await self.queue.delete(queue_name, msg_id)
+        if not deleted:
+            logger.info(
+                "Message %s already deleted by another worker; skipping retry enqueue.",
+                msg_id,
+            )
+            # No retry was scheduled.
+            return False, False
+        
+        # 2) Enqueue retry, if this fails, reflect that in the return.
+        try:
+            new_msg_id = await self.queue.send(
+                queue=queue_name, message=retry_payload, delay=delay
+            )
+        except Exception:
+            logger.exception(
+                "Failed to enqueue retry for job %s; no retry scheduled.", job_data.get("id")
+            )
+            # Optionally: you could mark tracker.fail() here or dead-letter.
+            return False, False
         
         logger.info(
             "Job %s scheduled for retry %d/%d in %ds",
@@ -141,13 +159,18 @@ class SupabaseQueueFailHandler:
             delay,
         )
         
+        # 3) Update tracker
+        # (Important) Now that the old message is deleted, it is safe to mark this row as RETRY.
+        # This takes it out of the active set after we closed the re-claim window.
         if job_tracker_instance:
             try:
                 await job_tracker_instance.retry(message_id=str(new_msg_id))
             except Exception:
                 logger.exception("Job re-queued, but JobTracker.retry() failed; continuing.")
         
-        return (False, True)  # not permanent, handled OK
+        # Retry was scheduled successfully.
+        return False, True
+    
     
     async def _archive_permanently(
             self,
@@ -453,10 +476,10 @@ class SupabaseQueue(SupabaseQueueFailHandler):
             queue_name: str
     ) -> bool:
         """Handle jobs that exceeded max attempts. Returns True if job was archived"""
-        attempts = int(message_data.get("attempts", 1))
+        attempts = int(message_data.get("attempts", 0))
         max_attempts = int(message_data.get("max_attempts", self.max_retries))
         
-        if attempts > max_attempts:
+        if attempts >= max_attempts:
             await self.queue.archive(queue_name, msg_id)
             return True
         return False
@@ -496,7 +519,7 @@ class SupabaseQueue(SupabaseQueueFailHandler):
 
         payload = self._parse_json_field(message_data.get("payload"))
 
-        attempts = int(message_data.get("attempts", 1))  # 1-based: first attempt if missing
+        attempts = int(message_data.get("attempts", 0))    # 0-based in payload
 
         job_data = {
             "id": str(message.msg_id),
@@ -505,8 +528,8 @@ class SupabaseQueue(SupabaseQueueFailHandler):
             "payload": payload,
 
             "priority": message_data.get("priority", 1),
-            "attempts": attempts,                          # current attempt number
-            "retries_done": max(0, attempts - 1),
+            "attempts": attempts + 1,                       # 1-based in memory
+            "retries_done": attempts,
             "max_attempts": int(message_data.get("max_attempts", self.max_retries)),
             "user_id": message_data.get("user_id"),
             "scheduled_at": message_data.get("scheduled_at"),
