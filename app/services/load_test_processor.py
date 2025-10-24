@@ -201,6 +201,7 @@ class LoadTestProcessor(BaseProcessor):
 
 
 
+
         self.logger.info(f"Processing load test for context: {context_id}")
         start_time = datetime.now(UTC)
 
@@ -449,7 +450,8 @@ class LoadTestProcessor(BaseProcessor):
             custom_requirement=data.custom_requirement or "",
             host=data.host or "localhost",
             auth=data.auth or False,
-            operation_id=context_id
+            operation_id=context_id,
+            db_type=data.db_type
         )
         if result:
             return result, output_dir

@@ -44,8 +44,8 @@ dependencies = [
    "devdox-ai-models @ git+https://github.com/montymobile1/devdox-ai-models.git@a34f8d1",
    # Encryption package
    "devdox-ai-encryption @ git+https://github.com/montymobile1/devdox-ai-encryption.git@4eefae1",
-   "devdox-ai-git @ git+https://github.com/montymobile1/devdox-ai-git.git@c56278d",
-   "devdox-ai-locust==0.1.2",
+   "devdox-ai-git @ git+https://github.com/montymobile1/devdox-ai-git.git@24741e6",
+   "devdox-ai-locust==0.1.4",
    "locust==2.0.0",
    "langchain-together==0.3.0",
    "together==1.5.17",

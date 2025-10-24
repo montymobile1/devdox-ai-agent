@@ -3,10 +3,12 @@ from typing import List, Dict, Optional, Any
 import re
 from enum import Enum
 from datetime import datetime, timezone
-from dataclasses import dataclass
 from uuid import uuid4
 from urllib.parse import urlparse
 
+class DatabaseType(str, Enum):
+    EMPTY = ""
+    MONGO = "mongo"
 
 class LoadTestConfig:
     DEFAULT_TEST_TYPE = "locust"
@@ -36,6 +38,10 @@ class LoadTestRequest(BaseModel):
         ...,
         description="Whether the API requires authentication",
         example=True
+    )
+    db_type: str = Field(
+        default=DatabaseType.EMPTY,
+        description="Type of load test to run"
     )
 
     output_path: Optional[str] = Field(
@@ -75,7 +81,33 @@ class LoadTestRequest(BaseModel):
             max_length=1000
         )
 
+    @field_validator('db_type')
+    @classmethod
+    def validate_db_type(cls, v: str) -> str:
+        """
+        Comprehensive db_type validator with normalization
+        - Strips whitespace and normalizes case
+        - Validates against DatabaseType enum
+        - Provides helpful error messages
+        """
+        if v is None:
+            v = ""
 
+        # Normalize input
+        normalized = str(v).strip().lower()
+
+        # Create mapping for case-insensitive comparison
+        enum_mapping = {db_type.value.lower(): db_type.value for db_type in DatabaseType}
+
+        if normalized not in enum_mapping:
+            allowed_display = [f"'{db_type.value}'" if db_type.value else "''" for db_type in DatabaseType]
+            raise ValueError(
+                f"Invalid database type: {repr(v)}. "
+                f"Must be one of: {', '.join(allowed_display)}"
+            )
+
+        # Return the canonical form
+        return enum_mapping[normalized]
 
     @field_validator('url')
     @classmethod
