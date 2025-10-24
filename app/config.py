@@ -18,8 +18,9 @@ class GitHosting(str, Enum):
 class MailSettings(BaseSettings):
     
     MAIL_SEND_TIMEOUT_MIN: ClassVar[int] = 20
-    
-    
+
+    MAIL_CHARSET :str = "utf-8"
+    MAIL_DEFAULT_SENDER_ENCODING:str = "utf-8"
     MAIL_USERNAME: str = Field(
         ...,
         description="SMTP username. Some providers require it separately, others just use MAIL_FROM.",

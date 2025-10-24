@@ -6,10 +6,10 @@ import asyncio
 import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from together import Together
+from together import AsyncTogether
 
 from app.config import settings
-from app.schemas.load_test import LoadTestError
+from app.schemas.load_test import LoadTestError,DatabaseType
 from devdox_ai_locust.schemas.processing_result import SwaggerProcessingRequest
 from devdox_ai_locust.utils.swagger_utils import get_api_schema
 from devdox_ai_locust.utils.open_ai_parser import OpenAPIParser, Endpoint
@@ -38,7 +38,7 @@ class APITestGenerator:
             together_api_key: API key for Together AI service. Uses settings.TOGETHER_API_KEY if not provided.
         """
         self.together_api_key = together_api_key or settings.TOGETHER_API_KEY
-        self.together_client = Together(api_key=self.together_api_key)
+        self.together_client = AsyncTogether(api_key=self.together_api_key)
         self.parser = OpenAPIParser()
         self.generator = HybridLocustGenerator(ai_client=self.together_client)
 
@@ -49,7 +49,8 @@ class APITestGenerator:
             custom_requirement: Optional[str] = "",
             host: Optional[str] = "0.0.0.0",
             auth: bool = False,
-            operation_id: str = ""
+            operation_id: str = "",
+            db_type: str = DatabaseType.EMPTY
     ) -> List[Dict[Any, Any]]:
         """
         Complete workflow: fetch schema, parse, and generate tests.
@@ -80,7 +81,6 @@ class APITestGenerator:
                     "EMPTY_SCHEMA",
                     {"swagger_url": swagger_url}
                 )
-
             # Step 2: Parse schema
             endpoints, api_info = await self._parse_api_schema(api_schema)
 
@@ -93,7 +93,8 @@ class APITestGenerator:
                 custom_requirement=custom_requirement,
                 host=host,
                 auth=auth,
-                operation_id=operation_id
+                operation_id=operation_id,
+                db_type=db_type
             )
 
 
@@ -102,7 +103,8 @@ class APITestGenerator:
                 extra={
                     "operation_id": operation_id,
                     "swagger_url": swagger_url,
-                    "total_files": len(created_files)
+                    "total_files": len(created_files),
+                    "db_type": db_type
                 }
             )
 
@@ -206,7 +208,8 @@ class APITestGenerator:
             custom_requirement: Optional[str] = "",
             host: Optional[str] = "0.0.0.0",
             auth: bool = False,
-            operation_id: str = ""
+            operation_id: str = "",
+            db_type: str = DatabaseType.EMPTY
     ) -> List[Dict[Any, Any]]:
         """
         Generate tests using AI and create test files.
@@ -239,6 +242,7 @@ class APITestGenerator:
                 custom_requirement=custom_requirement,
                 target_host=host,
                 include_auth=auth,
+                db_type=db_type
             )
 
 
@@ -307,7 +311,8 @@ class APITestGenerator:
             custom_requirement: Optional[str] = "",
             host: Optional[str] = "0.0.0.0",
             auth: bool = False,
-            operation_id: str = ""
+            operation_id: str = "",
+            db_type: str = DatabaseType.EMPTY
     ) -> List[Dict[Any, Any]]:
         """
         Generate tests from an existing API schema (skip fetch step).
@@ -337,7 +342,8 @@ class APITestGenerator:
                 custom_requirement=custom_requirement,
                 host=host,
                 auth=auth,
-                operation_id=operation_id
+                operation_id=operation_id,
+                db_type=db_type
             )
 
             logger.info(f"Test generation from schema completed. Created {len(created_files)} files.")
