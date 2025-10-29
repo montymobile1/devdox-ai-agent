@@ -171,6 +171,8 @@ class QueueConsumer:
         if tracker:
             try:
                 await tracker.update_step(JobLevels.PROCESSING)
+            except asyncio.CancelledError:
+                raise
             except Exception:
                 # don't fail job if bookkeeping fails
                 self.logger.warning("tracker.update_step(PROCESSING) failed", exc_info=True)
@@ -180,6 +182,8 @@ class QueueConsumer:
             try:
                 await tracker.update_step(JobLevels.QUEUE_ACK)
                 await tracker.completed()
+            except asyncio.CancelledError:
+                raise
             except Exception:
                 self.logger.warning("tracker completion bookkeeping failed", exc_info=True)
         
