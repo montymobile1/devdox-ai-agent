@@ -222,7 +222,9 @@ async def get_authenticated_user(
         git_creds = extract_git_credentials_from_request(request)
         user_claims.git_token = git_creds.get("token")
         user_claims.git_provider = git_creds.get("provider")
-
+        
+        request.state.user_claims = user_claims
+        
         return user_claims
     except Exception as e:
         raise UnauthorizedAccess(
@@ -263,6 +265,9 @@ def mcp_auth_interceptor(
         mcp_context.store_user_for_api_key(api_key, user_claims)
 
     logger.info(f"MCP intercepted auth for user: {user_claims.sub}")
+    
+    request.state.user_claims = user_claims
+    
     return user_claims
 
 
@@ -280,6 +285,8 @@ async def get_mcp_aware_user_context(request: Request) -> UserClaims:
             if git_creds.get("token"):
                 user.git_token = git_creds.get("token")
                 user.git_provider = git_creds.get("provider")
+            
+            request.state.user_claims = user
             return user
 
         else:
@@ -291,6 +298,8 @@ async def get_mcp_aware_user_context(request: Request) -> UserClaims:
             if git_creds.get("token"):
                 user.git_token = git_creds.get("token")
                 user.git_provider = git_creds.get("provider")
+            
+            request.state.user_claims = user
             return user
         else:
             raise HTTPException(status_code=500, detail="No user context found")
