@@ -12,6 +12,7 @@ from fastapi_mcp import FastApiMCP, AuthConfig
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings, TORTOISE_ORM
 from app.exceptions.register import register_exception_handlers
+from app.infrastructure.request_recorder.middleware import RecordRequestMiddleware
 from app.logging_config import setup_logging
 from app.routes import router as api_router
 from app.infrastructure.queue_consumer import QueueConsumer
@@ -129,6 +130,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(
+    RecordRequestMiddleware,
+    include_rules=[
+            {"operation_id": "analyze_code", "redact_keys": set()},
+            {"operation_id": "load_tests",    "redact_keys": set()},
+            {"operation_id": "qna_summary", "redact_keys": set()},
+            # add one per included operation_id
+        ],
+)
+
 
 # Include API routes
 app.include_router(api_router)
