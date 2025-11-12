@@ -6,6 +6,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, ClassVar
 
+from models_src.configs.mongo_config import MongoConfig
 from pydantic import EmailStr, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.infrastructure.supabase_queue import SupabaseQueue
@@ -233,12 +234,15 @@ class Settings(BaseSettings):
     
     mail: MailSettings = Field(default_factory=MailSettings)
     
+    MONGO: Optional[MongoConfig] = Field(default_factory=MongoConfig)
+    
     class Config:
         """Pydantic config class."""
         env_file = str(Path(__file__).resolve().parent / "instance" / ".env")
         case_sensitive = True
         git_hosting: Optional[GitHosting] = None
         extra = "ignore"
+        env_nested_delimiter="__"
 
 
 # Initialize settings instance

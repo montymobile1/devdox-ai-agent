@@ -1,9 +1,10 @@
 """
 FastAPI application entry point for agent MCP server
 """
-
+import inspect
 from contextlib import asynccontextmanager
 import uvicorn
+from models_src import init_via_uri
 from tortoise import Tortoise
 from tortoise import connections
 import asyncio
@@ -50,7 +51,23 @@ async def lifespan(app: FastAPI):
 
     except Exception as e:
             logger.error(f"Database connection  failed: {e}")
-
+            
+            
+    # INITIALIZE MONGODB
+    mongo_client = None
+    if settings.MONGO:
+        mongo_uri = settings.MONGO.build_uri()
+        mongo_client, mongo_db = await init_via_uri(mongo_uri)
+        
+        # health check to fail fast
+        try:
+            await mongo_db.command("ping")
+        except Exception:
+            # clean up before re-raising so FastAPI doesn’t keep a half-open client
+            mongo_res = mongo_client.close()
+            if inspect.isawaitable(mongo_res):
+                await mongo_res
+            raise
 
     worker_service = QueueConsumer(
         queue=supabase_queue,
@@ -77,7 +94,14 @@ async def lifespan(app: FastAPI):
     if TORTOISE_ORM:
         await Tortoise.close_connections()
         logger.info("Database connections closed")
-
+    
+    if settings.MONGO and mongo_client:
+        res = mongo_client.close()
+        if inspect.isawaitable(res):
+            await res
+        
+        logger.info("MongoDB connections closed")
+    
     logger.info("Application shutdown complete")
 
 
