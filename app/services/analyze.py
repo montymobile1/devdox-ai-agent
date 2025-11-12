@@ -3,13 +3,10 @@ from typing import Annotated, Any, AsyncGenerator, Dict, List, Tuple
 
 from encryption_src.fernet.service import FernetEncryptionHelper
 from fastapi import Depends
-from models_src.dto.repo import RepoResponseDTO
-from models_src.repositories.user import TortoiseUserStore
+from models_src import RepoResponseDTO, get_active_user_store, IUserStore, get_active_code_chunks_store, ICodeChunksStore, get_active_repo_store, IRepoStore
 from together import AsyncTogether
 import asyncio
 import json
-from models_src.repositories.code_chunks import TortoiseCodeChunksStore as CodeChunksStore
-from models_src.repositories.repo import TortoiseRepoStore as RepoStore
 from cohere import AsyncClientV2 as CohereAsyncClientV2
 
 from app.utils.auth import UserClaims
@@ -26,9 +23,9 @@ class AnalyseService:
     
     def __init__(
         self,
-        repo_store: RepoStore,
-        code_chunks_store: CodeChunksStore,
-        user_store: TortoiseUserStore,
+        repo_store: IRepoStore,
+        code_chunks_store: ICodeChunksStore,
+        user_store: IUserStore,
         encryption_service: FernetEncryptionHelper
     ):
         self.repo_store = repo_store
@@ -40,9 +37,9 @@ class AnalyseService:
     @classmethod
     def with_dependency(
         cls,
-        repo_store: Annotated[RepoStore, Depends()],
-        code_chunks_store: Annotated[CodeChunksStore, Depends()],
-        user_store: Annotated[TortoiseUserStore, Depends()],
+        repo_store: Annotated[IRepoStore, Depends(get_active_repo_store)],
+        code_chunks_store: Annotated[ICodeChunksStore, Depends(get_active_code_chunks_store)],
+        user_store: Annotated[IUserStore, Depends(get_active_user_store)],
         encryption_service: Annotated[FernetEncryptionHelper, Depends(get_encryption_helper)]
     ) -> "AnalyseService":
         return cls(repo_store, code_chunks_store, user_store, encryption_service)

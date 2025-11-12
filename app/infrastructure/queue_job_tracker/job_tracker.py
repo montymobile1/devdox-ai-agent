@@ -26,12 +26,7 @@ import logging
 from enum import Enum
 from typing import NamedTuple, Optional
 
-from models_src.dto.queue_job_claim_registry import QueueProcessingRegistryRequestDTO, \
-    QueueProcessingRegistryResponseDTO
-from models_src.models.queue_job_claim_registry import QRegistryStat, queue_processing_registry_one_claim_unique
-from models_src.repositories.queue_job_claim_registry import TortoiseQueueProcessingRegistryStore
-from tortoise.exceptions import IntegrityError
-
+from models_src import get_active_qpr_store, JobAlreadyClaimed, QueueProcessingRegistryRequestDTO, QueueProcessingRegistryResponseDTO, QRegistryStat
 
 class JobLevels(str, Enum):
     """
@@ -85,7 +80,7 @@ class JobTracker:
         __queue_processing_registry_store: Repository for queue job tracker
         """
         self.__tracked_claim: QueueProcessingRegistryResponseDTO = tracked_claim
-        self.__queue_processing_registry_store = queue_processing_registry_store or TortoiseQueueProcessingRegistryStore()
+        self.__queue_processing_registry_store = queue_processing_registry_store or get_active_qpr_store()
         self.__worker_id = worker_id
         self.__queue_name = queue_name
         self.__step = initial_step
@@ -190,7 +185,7 @@ class JobTrackerManager:
     when eligible, and enforces single-worker ownership per job.
     """
     def __init__(self, queue_processing_registry_store=None):
-        self.__queue_processing_registry_store=queue_processing_registry_store or TortoiseQueueProcessingRegistryStore()
+        self.__queue_processing_registry_store=queue_processing_registry_store or get_active_qpr_store()
     
     async def try_claim(self, worker_id:str, message_id:str, queue_name:str) -> ClaimResult:
         """
@@ -233,13 +228,9 @@ class JobTrackerManager:
             else:
                 # Already Handled or being handled
                 return ClaimResult(False, None)
-
-        except IntegrityError as e:
-
-            if queue_processing_registry_one_claim_unique in str(e):
-                return ClaimResult(False, None)  # Someone else already claimed it
-
-            raise
+        
+        except JobAlreadyClaimed:
+            return ClaimResult(False, None) # Someone else already claimed it
         except Exception:
             logging.exception("Exception occurred while attempting to try_claim")
             raise

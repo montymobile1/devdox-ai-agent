@@ -7,8 +7,7 @@ from fastapi import Depends, HTTPException
 from contextlib import asynccontextmanager
 
 from pydantic import ValidationError
-from models_src.repositories.repo import TortoiseRepoStore as RepoStore
-from models_src.repositories.git_label import TortoiseGitLabelStore as GitLabelRepository
+from models_src import get_active_repo_store, IRepoStore, get_active_git_label_store, ILabelStore
 from app.schemas.load_test import LoadTestRequest, LoadTestResult, LoadTestStatus, LoadTestError, LoadLocustPayload
 from together import Together
 from app.config import settings, supabase_queue
@@ -23,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 class LoadTestService:
 
-    def __init__(self, repo_store: RepoStore, git_label_repository: GitLabelRepository):
+    def __init__(self, repo_store: IRepoStore, git_label_repository: ILabelStore):
 
         self.repo_store = repo_store
         self.git_label_repository = git_label_repository
@@ -49,8 +48,8 @@ class LoadTestService:
     @classmethod
     def with_dependency(
             cls,
-            repo_store: Annotated[RepoStore, Depends()],
-            git_label_repository: Annotated[GitLabelRepository, Depends()]
+            repo_store: Annotated[IRepoStore, Depends(get_active_repo_store)],
+            git_label_repository: Annotated[ILabelStore, Depends(get_active_git_label_store)]
     ) -> "LoadTestService":
         """Dependency injection factory with validation"""
         if repo_store is None:
