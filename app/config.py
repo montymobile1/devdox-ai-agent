@@ -6,7 +6,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, ClassVar
 
-from models_src.configs.mongo_config import MongoConfig
+from models_src import MongoConfig
 from pydantic import EmailStr, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.infrastructure.supabase_queue import SupabaseQueue
