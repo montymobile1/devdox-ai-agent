@@ -3,9 +3,7 @@ from typing import Annotated, Any, List, Optional
 
 from encryption_src.fernet.service import FernetEncryptionHelper
 from fastapi import Depends
-from models_src.repositories.code_chunks import TortoiseCodeChunksStore
-from models_src.repositories.repo import TortoiseRepoStore
-from models_src.repositories.user import TortoiseUserStore
+from models_src import get_active_code_chunks_store, ICodeChunksStore, get_active_repo_store, IRepoStore, get_active_user_store, IUserStore
 from pydantic import BaseModel, EmailStr
 from together import AsyncTogether
 
@@ -38,10 +36,10 @@ class QnAService:
 	
 	def __init__(
 			self,
-			repo_store: TortoiseRepoStore,
+			repo_store: IRepoStore,
 			email_dispatcher: EmailDispatcher,
-			code_chunks_store: TortoiseCodeChunksStore,
-			user_store: TortoiseUserStore,
+			code_chunks_store: ICodeChunksStore,
+			user_store: IUserStore,
 			encryption_service: FernetEncryptionHelper,
 	):
 		
@@ -54,10 +52,10 @@ class QnAService:
 	@classmethod
 	def with_dependency(
 			cls,
-			repo_store: Annotated[TortoiseRepoStore, Depends()],
+			repo_store: Annotated[IRepoStore, Depends(get_active_repo_store)],
 			email_dispatcher: Annotated[EmailDispatcher, Depends(get_email_dispatcher)],
-			code_chunks_store: Annotated[TortoiseCodeChunksStore, Depends()],
-			user_store: Annotated[TortoiseUserStore, Depends()],
+			code_chunks_store: Annotated[ICodeChunksStore, Depends(get_active_code_chunks_store)],
+			user_store: Annotated[IUserStore, Depends(get_active_user_store)],
 			encryption_service: Annotated[FernetEncryptionHelper, Depends(get_encryption_helper)],
 			
 	) -> "QnAService":
