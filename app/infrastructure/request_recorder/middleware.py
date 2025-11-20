@@ -13,9 +13,7 @@ from starlette.requests import Request
 from starlette.exceptions import HTTPException
 
 from encryption_src.fernet.service import FernetEncryptionHelper
-from models_src.dto.api_log import ApiLogRequestDTO
-from models_src.repositories.api_log import TortoiseApiLogStore
-from models_src.repositories.user import TortoiseUserStore
+from models_src import ApiLogRequestDTO, ApiLogStore, RecordNotFound, get_active_api_log_store, get_active_user_store, UserStore
 from app.utils.encryption import get_encryption_helper
 
 logger = logging.getLogger(__name__)
@@ -45,16 +43,16 @@ class RecordRequestMiddleware(BaseHTTPMiddleware):
         *,
         include_rules: list[OperationLogRule] | None,   # REQUIRED allowlist of ops to log
         encrypt_bodies: bool = True,                    # GLOBAL: if True, require user salt and encrypt
-        api_log_store: TortoiseApiLogStore | None = None,
-        user_store: TortoiseUserStore | None = None,
+        api_log_store: ApiLogStore | None = None,
+        user_store: UserStore | None = None,
         encryptor: FernetEncryptionHelper | None = None,
     ):
         if not include_rules:
             raise ValueError("'include_rules' is required and cannot be empty.")
 
         super().__init__(app)
-        self.api_log_store = api_log_store or TortoiseApiLogStore()
-        self.user_store = user_store or TortoiseUserStore()
+        self.api_log_store = api_log_store or get_active_api_log_store()
+        self.user_store = user_store or get_active_user_store()
         self.encryptor = encryptor or get_encryption_helper()
         self.encrypt_bodies = encrypt_bodies
 
@@ -102,12 +100,12 @@ class RecordRequestMiddleware(BaseHTTPMiddleware):
             raise HTTPException(status_code=500, detail="Missing user identity for encryption.")
         try:
             enc_salt = await self.user_store.get_encryption_salt(user_sub)
+        except RecordNotFound:
+            logger.error("User salt not found for sub=%s", user_sub)
+            raise HTTPException(status_code=500, detail="User encryption salt not found.")
         except Exception:
             logger.exception("Failed retrieving user salt for sub=%s", user_sub)
             raise HTTPException(status_code=500, detail="Failed retrieving user encryption salt.")
-        if not enc_salt:
-            logger.error("User salt not found for sub=%s", user_sub)
-            raise HTTPException(status_code=500, detail="User encryption salt not found.")
         try:
             return self.encryptor.decrypt(enc_salt)
         except Exception:
