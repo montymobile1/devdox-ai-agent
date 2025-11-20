@@ -18,12 +18,7 @@ from app.config import settings
 class AnalyseRequest(BaseModel):
     """Request wrapper for analysis"""
     
-    question: Optional[str] = Field(
-        default="",
-        max_length=300,
-        description="A question to ask about the code repository",
-        example="How does the authentication system work?",
-    )
+ 
     # questions: Optional[List[str]] = Field(
     #     default=[],
     #     max_length=settings.MAX_QUESTIONS,
