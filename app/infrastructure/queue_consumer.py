@@ -167,7 +167,7 @@ class QueueConsumer:
     # ================_process_job===================================
     # ===============================================================
     
-    async def _set_processing_tracker(self, tracker):
+    async def _set_processing_tracker(self, tracker: Optional[JobTracker]):
         if tracker:
             try:
                 await tracker.update_step(JobLevels.PROCESSING)
@@ -177,7 +177,7 @@ class QueueConsumer:
                 # don't fail job if bookkeeping fails
                 self.logger.warning("tracker.update_step(PROCESSING) failed", exc_info=True)
     
-    async def _set_track_tracer_finished(self, tracker, tracer):
+    async def _set_track_tracer_finished(self, tracker: Optional[JobTracker], tracer: Optional[JobTraceMetaData]):
         if tracker:
             try:
                 await tracker.update_step(JobLevels.QUEUE_ACK)
