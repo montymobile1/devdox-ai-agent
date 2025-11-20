@@ -1,9 +1,10 @@
 """
 FastAPI application entry point for agent MCP server
 """
-
+import inspect
 from contextlib import asynccontextmanager
 import uvicorn
+from models_src import init_via_uri
 from tortoise import Tortoise
 from tortoise import connections
 import asyncio
@@ -12,6 +13,7 @@ from fastapi_mcp import FastApiMCP, AuthConfig
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings, TORTOISE_ORM
 from app.exceptions.register import register_exception_handlers
+from app.infrastructure.request_recorder.middleware import RecordRequestMiddleware
 from app.logging_config import setup_logging
 from app.routes import router as api_router
 from app.infrastructure.queue_consumer import QueueConsumer
@@ -50,7 +52,23 @@ async def lifespan(app: FastAPI):
 
     except Exception as e:
             logger.error(f"Database connection  failed: {e}")
-
+            
+            
+    # INITIALIZE MONGODB
+    mongo_client = None
+    if settings.MONGO:
+        mongo_uri = settings.MONGO.build_uri()
+        mongo_client, mongo_db = await init_via_uri(mongo_uri)
+        
+        # health check to fail fast
+        try:
+            await mongo_db.command("ping")
+        except Exception:
+            # clean up before re-raising so FastAPI doesn’t keep a half-open client
+            mongo_res = mongo_client.close()
+            if inspect.isawaitable(mongo_res):
+                await mongo_res
+            raise
 
     worker_service = QueueConsumer(
         queue=supabase_queue,
@@ -77,7 +95,14 @@ async def lifespan(app: FastAPI):
     if TORTOISE_ORM:
         await Tortoise.close_connections()
         logger.info("Database connections closed")
-
+    
+    if settings.MONGO and mongo_client:
+        res = mongo_client.close()
+        if inspect.isawaitable(res):
+            await res
+        
+        logger.info("MongoDB connections closed")
+    
     logger.info("Application shutdown complete")
 
 
@@ -99,6 +124,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(
+    RecordRequestMiddleware,
+    include_rules=[
+            {"operation_id": "analyze_code", "redact_keys": set()},
+            {"operation_id": "load_tests",    "redact_keys": set()},
+            {"operation_id": "qna_summary", "redact_keys": set()},
+            # add one per included operation_id
+        ],
+)
+
 
 # Include API routes
 app.include_router(api_router)

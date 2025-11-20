@@ -6,7 +6,6 @@ import hashlib
 import logging
 import secrets
 import string
-import os
 from dataclasses import dataclass
 from typing import  Annotated, Dict, Optional, Protocol
 
@@ -22,9 +21,7 @@ from app.exceptions.exception_constants import (
 
 )
 
-from models_src.repositories.api_key import TortoiseApiKeyStore
-from models_src.repositories.user import TortoiseUserStore
-
+from models_src import IApiKeyStore, get_active_api_key_store, get_active_user_store
 
 http_bearer_security_schema = HTTPBearer(auto_error=False)
 
@@ -59,9 +56,9 @@ class IUserAuthenticator(Protocol):
 class APIKeyAuthenticator(IUserAuthenticator):
     """API key based authentication"""
 
-    def __init__(self, api_key_store: TortoiseApiKeyStore):
+    def __init__(self, api_key_store: IApiKeyStore):
         self.api_key_store = api_key_store
-        self.user_store = TortoiseUserStore()
+        self.user_store = get_active_user_store()
 
     async def authenticate(self, request: Request, api_key: str) -> UserClaims:
         """
@@ -129,7 +126,7 @@ class APIKeyManager:
     DEFAULT_MAX_KEY_LENGTH = 32
     DEFAULT_PREFIX = "dvd_"
 
-    def __init__(self, api_key_store: TortoiseApiKeyStore):
+    def __init__(self, api_key_store: IApiKeyStore):
         self.api_key_store = api_key_store
 
     @staticmethod
@@ -171,7 +168,7 @@ class APIKeyManager:
 class PostApiKeyService:
     def __init__(
         self,
-        api_key_store: TortoiseApiKeyStore,
+        api_key_store: IApiKeyStore,
         api_key_manager: APIKeyManager,
     ):
         self.api_key_store = api_key_store
@@ -180,7 +177,7 @@ class PostApiKeyService:
     @classmethod
     def with_dependency(
         cls,
-        api_key_store: Annotated[TortoiseApiKeyStore, Depends()],
+        api_key_store: Annotated[IApiKeyStore, Depends(get_active_api_key_store)],
     ) -> "PostApiKeyService":
 
         api_key_manager = APIKeyManager(api_key_store=api_key_store)
@@ -192,7 +189,7 @@ class PostApiKeyService:
 
 
 def get_user_authenticator_dependency(
-    api_key_store: Annotated[TortoiseApiKeyStore, Depends()]
+    api_key_store: Annotated[IApiKeyStore, Depends(get_active_api_key_store)]
 ) -> IUserAuthenticator:
     """
     Returns the appropriate authenticator based on configuration.
@@ -225,7 +222,9 @@ async def get_authenticated_user(
         git_creds = extract_git_credentials_from_request(request)
         user_claims.git_token = git_creds.get("token")
         user_claims.git_provider = git_creds.get("provider")
-
+        
+        request.state.user_claims = user_claims
+        
         return user_claims
     except Exception as e:
         raise UnauthorizedAccess(
@@ -266,6 +265,9 @@ def mcp_auth_interceptor(
         mcp_context.store_user_for_api_key(api_key, user_claims)
 
     logger.info(f"MCP intercepted auth for user: {user_claims.sub}")
+    
+    request.state.user_claims = user_claims
+    
     return user_claims
 
 
@@ -283,6 +285,8 @@ async def get_mcp_aware_user_context(request: Request) -> UserClaims:
             if git_creds.get("token"):
                 user.git_token = git_creds.get("token")
                 user.git_provider = git_creds.get("provider")
+            
+            request.state.user_claims = user
             return user
 
         else:
@@ -294,6 +298,8 @@ async def get_mcp_aware_user_context(request: Request) -> UserClaims:
             if git_creds.get("token"):
                 user.git_token = git_creds.get("token")
                 user.git_provider = git_creds.get("provider")
+            
+            request.state.user_claims = user
             return user
         else:
             raise HTTPException(status_code=500, detail="No user context found")
