@@ -8,7 +8,22 @@ from app.config import settings
 class AnalyseRequest(BaseModel):
     """Request wrapper for analysis"""
     
-    # example: "How does the authentication system work?"
+from typing import List, Optional
+
+from pydantic import BaseModel, Field, field_validator
+
+from app.config import settings
+
+
+class AnalyseRequest(BaseModel):
+    """Request wrapper for analysis"""
+    
+    question: Optional[str] = Field(
+        default="",
+        max_length=300,
+        description="A question to ask about the code repository",
+        example="How does the authentication system work?",
+    )
     # questions: Optional[List[str]] = Field(
     #     default=[],
     #     max_length=settings.MAX_QUESTIONS,

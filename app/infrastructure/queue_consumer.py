@@ -1,4 +1,51 @@
-import traceback
+# --- Helper methods for processing specific job types ---
+    # NOTE: These would be new methods in your class.
+
+    async def _handle_email_job(self, job):
+        """Processes a job of type 'send_email'."""
+        self.logger.info(f"Processing email job: {job.id}")
+        # ... specific logic for sending an email ...
+        await self.queue.complete_job(job.id)
+
+    async def _handle_image_job(self, job):
+        """Processes a job of type 'process_image'."""
+        self.logger.info(f"Processing image job: {job.id}")
+        # ... specific logic for processing an image ...
+        await self.queue.complete_job(job.id)
+
+    async def _handle_job_failure(self, job, error):
+        """Handles the logic for a failed job, including retries."""
+        self.logger.error(f"Failed to process job {job.id}: {error}")
+        # Example retry logic
+        if job.retries < self.max_retries:
+            await self.queue.retry_job(job.id)
+        else:
+            await self.queue.fail_job(job.id, "Max retries exceeded")
+
+    # --- Refactored main processing function (the original problematic function) ---
+    async def _process_job(self, job):
+        """
+        Processes a job by dispatching it to the appropriate handler.
+        This refactoring reduces cognitive complexity.
+        """
+        # A mapping of job types to their handler methods.
+        # This replaces a large if/elif/else chain.
+        job_handlers = {
+            "send_email": self._handle_email_job,
+            "process_image": self._handle_image_job,
+        }
+
+        try:
+            handler = job_handlers.get(job.type)
+            if handler:
+                await handler(job)
+            else:
+                # Handle unknown job types
+                self.logger.warning(f"Unknown job type '{job.type}' for job {job.id}")
+                await self.queue.fail_job(job.id, "Unknown job type")
+
+        except Exception as e:
+            await self._handle_job_failure(job, e)import traceback
 
 from app.config import settings
 from app.infrastructure.mailing_service import Template
@@ -154,6 +201,16 @@ class QueueConsumer:
         try:
 
             result = await self.queue.dequeue(queue_name, job_types=job_types)
+            print("result ", result)
+            stats = await self.queue.get_queue_stats("testing")
+            self.logger.info(
+                "line 159 Queue stats - Queued: %s, Processed: %s, PermanentFails: %s, RetriesScheduled: %s",
+                stats.get("queued", 0),
+                self.processed_count,
+                self.permanent_failures,
+                self.retries_scheduled,
+            )
+
             return result
 
         except Exception as e:
@@ -290,6 +347,7 @@ class QueueConsumer:
         while self.running:
             try:
                 stats = await self.queue.get_queue_stats("testing")
+                print("stats line 303 ", stats)
                 self.logger.info(
                     "Queue stats - Queued: %s, Processed: %s, PermanentFails: %s, RetriesScheduled: %s",
                     stats.get("queued", 0),
