@@ -4,7 +4,7 @@ Configuration settings for the DevDox AI Portal API.
 
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, ClassVar
+from typing import Any, Callable, Dict, List, Literal, Optional, ClassVar
 
 from models_src import MongoConfig
 from pydantic import EmailStr, Field, field_validator, model_validator
@@ -166,6 +166,24 @@ class MailSettings(BaseSettings):
         extra="ignore",
     )
 
+def build_mongo(env_files, enabled: bool = True) -> Optional[MongoConfig]:
+    """
+    Build MongoConfig from env files.
+    If enabled=False, returns None (Mongo disabled).
+    """
+    if not enabled:
+        return None
+    return MongoConfig(_env_file=env_files)
+
+
+def make_mongo_factory(env_files, enabled: bool = True) -> Callable[[], Optional[MongoConfig]]:
+    """
+    Pydantic's default_factory must be a zero-argument callable.
+    So we "close over" env_files/enabled and return a 0-arg factory.
+    """
+    def _factory() -> Optional[MongoConfig]:
+        return build_mongo(env_files, enabled)
+    return _factory
 
 class Settings(BaseSettings):
     """Application settings."""
@@ -234,7 +252,10 @@ class Settings(BaseSettings):
     
     mail: MailSettings = Field(default_factory=MailSettings)
     
-    MONGO: Optional[MongoConfig] = Field(default_factory=MongoConfig)
+    MONGO: Optional[MongoConfig] = Field(default_factory=make_mongo_factory(
+        env_files=str(Path(__file__).resolve().parent / "instance" / ".env"),
+        enabled=True
+    ))
     
     class Config:
         """Pydantic config class."""
@@ -242,8 +263,6 @@ class Settings(BaseSettings):
         case_sensitive = True
         git_hosting: Optional[GitHosting] = None
         extra = "ignore"
-        env_nested_delimiter="__"
-
 
 # Initialize settings instance
 settings = Settings()
