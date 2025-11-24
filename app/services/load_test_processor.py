@@ -16,9 +16,7 @@ from app.schemas.load_test import LoadTestRequest, LoadTestConfig, RepositoryVal
 from app.services.api_test_generator import APITestGenerator
 from app.utils.encryption import get_encryption_helper
 from devdox_ai_git.repo_fetcher import RepoFetcher
-from models_src.repositories.git_label import TortoiseGitLabelStore as GitLabelRepository
-from models_src.repositories.repo import TortoiseRepoStore as RepoRepository
-from models_src.repositories.user import TortoiseUserStore as UserRepository
+from models_src import get_active_git_label_store, ILabelStore, get_active_repo_store, IRepoStore, get_active_user_store, IUserStore
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +27,9 @@ class RepositoryValidationService:
 
     def __init__(
             self,
-            repo_repository: RepoRepository,
-            user_repository:UserRepository,
-            git_label_repository:GitLabelRepository,
+            repo_repository: IRepoStore,
+            user_repository:IUserStore,
+            git_label_repository:ILabelStore,
     ):
         """
         Initialize validation service.
@@ -504,7 +502,7 @@ class LoadTestProcessor(BaseProcessor):
             raise ValueError("Invalid git provider")
 
 
-        validation_service = RepositoryValidationService(repo_repository=RepoRepository(),user_repository=UserRepository(),git_label_repository=GitLabelRepository())
+        validation_service = RepositoryValidationService(repo_repository=get_active_repo_store(),user_repository=get_active_user_store(),git_label_repository=get_active_git_label_store())
         
         
         # Track: prechecks (repo/user/token validation)
