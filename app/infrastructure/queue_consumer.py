@@ -162,7 +162,34 @@ class QueueConsumer:
             if trace:
                 trace.record_error(e, summary="Dequeue failure")
             return None
-
+    
+    # ===============================================================
+    # ================_process_job===================================
+    # ===============================================================
+    
+    async def _set_processing_tracker(self, tracker: Optional[JobTracker]):
+        if tracker:
+            try:
+                await tracker.update_step(JobLevels.PROCESSING)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # don't fail job if bookkeeping fails
+                self.logger.warning("tracker.update_step(PROCESSING) failed", exc_info=True)
+    
+    async def _set_track_tracer_finished(self, tracker: Optional[JobTracker], tracer: Optional[JobTraceMetaData]):
+        if tracker:
+            try:
+                await tracker.update_step(JobLevels.QUEUE_ACK)
+                await tracker.completed()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                self.logger.warning("tracker completion bookkeeping failed", exc_info=True)
+        
+        if tracer:
+            tracer.mark_job_settled(datetime.now(UTC))
+        
     async def _process_job(
         self,
         worker_id: str,
@@ -175,7 +202,6 @@ class QueueConsumer:
 
         job_type = job_data.get("job_type", "unknown")
 
-
         start_time = datetime.now(timezone.utc)
 
         # begin timing in the trace
@@ -183,12 +209,7 @@ class QueueConsumer:
             trace.mark_job_started(start_time)
 
         # mark PROCESSING step
-        if tracker:
-            try:
-                await tracker.update_step(JobLevels.PROCESSING)
-            except Exception:
-                # don't fail job if bookkeeping fails
-                self.logger.warning("tracker.update_step(PROCESSING) failed", exc_info=True)
+        await self._set_processing_tracker(tracker)
 
         self.logger.info(f"{worker_id} processing job {job_id} of type {job_type}")
 
@@ -223,15 +244,7 @@ class QueueConsumer:
 
             if success:
                 # Update tracker for queue ack + completion
-                if tracker:
-                    try:
-                        await tracker.update_step(JobLevels.QUEUE_ACK)
-                        await tracker.completed()
-                    except Exception:
-                        self.logger.warning("tracker completion bookkeeping failed", exc_info=True)
-
-                if trace:
-                    trace.mark_job_settled(datetime.now(UTC))
+                await self._set_track_tracer_finished(tracker, trace)
 
                 processing_time = (finished_at - start_time).total_seconds()
                 self.processed_count += 1
@@ -251,8 +264,6 @@ class QueueConsumer:
                 # If we failed to delete/ack the message, schedule a retry so it doesn't get stuck
                 exc = RuntimeError("Queue complete_job returned False")
                 await self._retry_or_archive(job_data, exc, trace, tracker, "Queue complete_job returned False")   # etc.
-
-
         except asyncio.TimeoutError as e:
             self.logger.error(f"{worker_id} job {job_id} timed out after {self.max_processing_time}s")
             await self._retry_or_archive(job_data, e, trace, tracker, "Processor timeout")
